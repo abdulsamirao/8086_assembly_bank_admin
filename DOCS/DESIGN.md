@@ -4,15 +4,15 @@ This stage establishes the project toolchain and proves the headless DOSBox work
 
 ## Bootstrapping the assembler
 
-The VS Code MASM/TASM extension bundles TASM 4.1 and TLINK 7.1 in `resources\TASM.jsdos`. The extracted `tasm` directory contains the DOS executables and their runtime files; these are staged under `TOOLS\TASM`. The build script runs those tools inside DOSBox rather than relying on a Windows assembler.
+The VS Code MASM/TASM extension bundles TASM 4.1 and TLINK 7.1 in `resources\TASM.jsdos`. Before testing, `TOOLS\RUNHOST.PS1` invokes `TOOLS\BOOT86.PS1`. If both `TASM.EXE` and `TLINK.EXE` are already in `TOOLS\TASM`, bootstrap is skipped. Otherwise the script finds the newest installed `xsro.masm-tasm-*` extension under `%USERPROFILE%\.vscode\extensions` and copies only `TASM.EXE`, `TLINK.EXE`, `RTM.EXE`, and `DPMI16BI.OVL` from its archive. Missing the extension produces an explicit install-the-MASM/TASM-extension error. The extracted files stay local and `TOOLS\TASM\` is ignored; DOSBox runs the tools rather than relying on a Windows assembler.
 
 ## Headless launch
 
 `TOOLS\HEADLESS.CONF` provides DOSBox's `[autoexec]` commands: disable command echo, mount the project as `C:`, select that drive, call `TOOLS\RUNTEST.BAT`, and exit. Launch DOSBox Staging from the project root with `-conf TOOLS\HEADLESS.CONF`; the configuration file avoids quoting problems with repeated `-c` arguments.
 
-Run the workflow from the project root with `powershell -NoProfile -ExecutionPolicy Bypass -File TOOLS\RUNHOST.PS1`. The host runner starts DOSBox with the single argument `-conf TOOLS\HEADLESS.CONF`, waits up to 30 seconds, and terminates it if it hangs. It then checks the marker file, compares output files byte-for-byte against the expected files, verifies the captured exit codes, and prints all DOSBox stdout/stderr.
+Run the workflow from the project root with `powershell -NoProfile -ExecutionPolicy Bypass -File TOOLS\RUNHOST.PS1`. The host runner starts DOSBox with the single argument `-conf TOOLS\HEADLESS.CONF`, waits up to 30 seconds, and terminates it if it hangs. It discovers tests by enumerating `TESTS\*.IN`; every input must have a same-stem `.EXP` file. DOS batch files use a same-stem `.EXE` when available, otherwise fall back to `BANK.EXE`. The host runner compares each produced `.OUT` byte-for-byte with its `.EXP`. Adding a case therefore requires only an input/expected-output pair. Complete DOSBox stdout/stderr is printed from `HEADLESS.OUT` and `HEADLESS.LOG`.
 
-`TOOLS\BUILD.BAT` changes to `C:\TOOLS` before invoking TASM and TLINK so their generated `.OBJ` and `.EXE` files land beside the sources. `TOOLS\RUNTEST.BAT` then runs the proof executables with redirected streams and writes `START`/`END` markers to `TOOLS\STAGE0.LOG`.
+`TOOLS\BUILD.BAT` assembles and links the Stage 0 tools and `SRC\BANK.ASM` with the extension's TASM/TLINK. `BANK.ASM` includes `IO.INC` from the same source directory; the headless build assembles it from `C:\SRC`, and TASM reports no include or assembly errors. `TOOLS\RUNHOST.PS1` discovers each test input and creates a temporary `RUNCASES.BAT`; the generated commands run the selected executable with stdin/stdout redirection and record its DOS errorlevel. `TOOLS\RUNTEST.BAT` writes the `START`/`END` markers to `TOOLS\STAGE0.LOG`.
 
 ## What the proof checks
 
@@ -28,3 +28,34 @@ Run the workflow from the project root with `powershell -NoProfile -ExecutionPol
 In DOSBox's DOS batch shell, `%ERRORLEVEL%` is not expanded as in Windows CMD; it prints `Echo is off.` instead. The runner therefore captures the return values with `IF ERRORLEVEL`, which is the DOS-compatible mechanism.
 
 Stage 0 was verified with `powershell -NoProfile -ExecutionPolicy Bypass -File TOOLS\RUNHOST.PS1`: DOSBox exited without waiting at a prompt, the `START` and `END` markers were present, both output files matched their expected files byte-for-byte, and the captured program exit codes were `2` and `0`.
+
+## Stage 1: I/O and command-tail behavior
+
+The application test executable is `TOOLS\BANK.EXE`, built from [BANK.ASM](../SRC/BANK.ASM). The assembly unit uses `INCLUDE IO.INC`; this relative include resolved in the headless build from `C:\SRC`. Each test basename selects `TOOLS\<basename>.EXE` if that source exists, otherwise the runner selects `TOOLS\BANK.EXE`. A test chooses its routine using its optional `.ARG` command-tail file, for example `/T DECIMAL 65535`, `/T LINE`, or `/T PSP`. The runner appends the exact argument text (apart from the file's final CR/LF) to the generated DOS command; absent `.ARG` means no command arguments. Adding a test case does not require editing the runner.
+
+### EOF and masked-input policy
+
+`READ_LINE` and `READ_PIN` first use DOS IOCTL function 44h to tell a console handle from a redirected file handle. Console line input uses function 0Ah and intentionally waits for the user; console PIN input uses function 08h and masks each accepted digit with `*`. With redirected input, the procedures read standard handle 0 through function 3Fh so they can observe an actual zero-byte read. `READ_LINE` returns AL=1 and prints `EOF` when no bytes remain before a line; `READ_PIN` returns AL=1 and prints `PIN INPUT ENDED` when the stream ends before any digit. Partial PINs are invalid, and neither redirected EOF case waits for more input. The empty `S05.IN` and `S07.IN` cases verify both paths.
+
+### Procedure walk-through
+
+- `MAIN` obtains the PSP segment with DOS function 62h before changing `DS`, saves it in `PSP_SEGMENT`, then sets `DS`/`ES` to the program data segment. Its test dispatcher sends `/T` selectors to the corresponding I/O routine; `/I`, `/B`, and `/U` are recognized and reported without implementing later-stage actions. `AX`, `BX`, `SI`, `DS`, and `ES` matter during PSP setup; it exits through function 4Ch.
+- `PRINT_STRING` sends the `$`-terminated string at `DS:DX` through function 09h. `DX` is the pointer and `AX` selects the DOS call; it destroys `AX`.
+- `PRINT_CHAR` sends `DL` through function 02h. `DL` is the character; it destroys `AX`.
+- `PRINT_NEWLINE` calls `PRINT_CHAR` once for CR and once for LF, saving/restoring `AX` and `DX` so its caller's character/pointer state survives.
+- `READ_LINE` uses function 0Ah for interactive buffered input. For redirected files it reads one byte with function 3Fh until CR/LF, Ctrl-Z, or EOF, echoes the characters, enforces the line buffer limit, and returns AL=0/1/2 for success/EOF/too-long. `BX` indexes the buffer, `DX` supplies DOS buffers, and the status in `AL` is the caller-visible result.
+- `READ_PIN` gets four decimal digits without echoing the digits; accepted bytes are saved in `PIN_BUFFER` and each is replaced on screen by `*`. Console reads use function 08h; redirected reads use function 3Fh to make EOF observable. `BX` indexes the 4-byte buffer, and AL reports success/EOF/invalid input.
+- `PRINT_DECIMAL` repeatedly divides unsigned AX by 10, pushes remainders, then pops and emits them in reverse order. The explicit zero case avoids printing no digits. `BX` holds 10, `CX` counts digits for `LOOP`, and `DX:AX` is the DIV dividend.
+- `NEXT_TOKEN` scans the PSP tail using `ES:SI`, skips spaces, uppercases ASCII lowercase letters, and writes a NUL-terminated token. `CMD_POSITION`/`CMD_REMAINING` carry the parse cursor across calls; CF distinguishes no token or an overlong token.
+- `PARSE_COMMAND` initializes the cursor from PSP offset 80h/81h, recognizes `/T`, `/I`, `/B`, `/U`, and requires an argument after `/U`. It uses `REP MOVSB` to copy the selected test/account token into its destination. `ES` must point at the PSP while reading the tail and at `DS` while copying.
+- `TOKEN_EQUALS` compares NUL-terminated strings with `REPE CMPSB`; it temporarily sets `ES=DS` and executes `CLD` so traversal proceeds forward. ZF reports equality.
+- `PARSE_U16` converts a decimal token into AX and detects 16-bit overflow by checking the high word from `MUL`; CF marks invalid input.
+- `RUN_IO_TEST` maps the selector token to string, character, newline, line, PIN, decimal, or PSP verification. It records nonzero EOF/error status for `MAIN` to return through DOS function 4Ch.
+
+### 8086 checks and linter limits
+
+The temp-only `.8086` check confirms TASM 4.1 rejects `PUSHA`. It does **not** reject `SHL AX,4`, and also accepts `PUSH 1234h`; those are actual observed assembler behaviors, not accepted project source. With `/L`, TASM lists the shift expansion as four `D1 E0` encodings (`SHL AX,1`), which are 8086-valid. The listing splits the last opcode byte over a continuation line. In the combined throwaway instruction file, TASM rejected `POPA`, `IMUL AX,BX,5`, `ENTER`, `LEAVE`, `BOUND`, `INSB`, `OUTSB`, `MOVZX`, `MOVSX`, `MOV EAX,EBX`, `SETZ`, and `MOV AX,FS`. The throwaway sources and listings are created under ignored `TOOLS\CHK8086` during `RUNHOST.PS1` and removed after a successful run.
+
+`TOOLS\LINT8086.PS1` therefore checks actual source text as well as the assembler result. It flags forbidden mnemonics/registers, immediate `PUSH`/`IMUL`, and shift/rotate count literals other than 1. It checks `.ASM`/`.INC` sources under `SRC`; it is not a full MASM/TASM parser and does not evaluate macros, `EQU`-defined immediates, conditional assembly, generated code, or all possible arithmetic expressions. It flags an explicitly written `Jcc NEAR`, but does not calculate every branch distance; TASM's assembler diagnostics remain the check for a branch that cannot reach its target.
+
+Stage 1 was verified through `TOOLS\RUNHOST.PS1`: all 19 `.IN`/`.EXP` output cases matched, including decimal values 0, 9, 10, 305, and 65535; lowercase `/t`; unknown and missing switches; extra spaces; PSP preservation; masked PIN; and redirected EOF. The run also built `BANK.ASM` with `IO.INC`, verified the TASM listing, classified the forbidden-opcode probes, and passed the source linter.

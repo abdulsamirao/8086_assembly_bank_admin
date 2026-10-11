@@ -1,0 +1,713 @@
+.8086
+
+; Purpose: Print a '$'-terminated string using DOS standard output.
+; Inputs: DS:DX points to the first string byte.
+; Outputs: Writes through INT 21h function 09h.
+; Registers: Destroys AX; preserves BX, CX, DX, SI, DI, BP, DS, ES.
+; Flags: Unspecified.
+; ISA: INT 21h/AH=09h and DS:DX addressing.
+PRINT_STRING PROC NEAR
+    MOV AH, 09h
+    INT 21h
+    RET
+PRINT_STRING ENDP
+
+; Purpose: Write one character to standard output.
+; Inputs: DL contains the character.
+; Outputs: Writes one character through DOS function 02h.
+; Registers: Destroys AX; preserves BX, CX, DX, SI, DI, BP, DS, ES.
+; Flags: Unspecified.
+; ISA: INT 21h/AH=02h.
+PRINT_CHAR PROC NEAR
+    MOV AH, 02h
+    INT 21h
+    RET
+PRINT_CHAR ENDP
+
+; Purpose: Write a carriage-return/line-feed sequence.
+; Inputs: None.
+; Outputs: Writes CR then LF.
+; Registers: Preserves all general and segment registers.
+; Flags: Unspecified.
+; ISA: INT 21h/AH=02h and register-indirect character output.
+PRINT_NEWLINE PROC NEAR
+    PUSH AX
+    PUSH DX
+    MOV DL, 0Dh
+    CALL PRINT_CHAR
+    MOV DL, 0Ah
+    CALL PRINT_CHAR
+    POP DX
+    POP AX
+    RET
+PRINT_NEWLINE ENDP
+
+; Purpose: Read one line, returning EOF promptly for redirected input.
+; Inputs: Standard input; LINE_BUFFER is the AH=0Ah destination.
+; Outputs: AL=0 success, AL=1 EOF, AL=2 line too long.
+; Registers: Destroys AX; preserves BX, CX, DX, SI, DI, BP, DS, ES.
+; Flags: Unspecified.
+; ISA: INT 21h/AH=0Ah for console lines, AH=3Fh/44h for redirected input.
+READ_LINE PROC NEAR
+    PUSH BX
+    PUSH CX
+    PUSH DX
+    PUSH SI
+    PUSH DI
+    PUSH BP
+
+    MOV AX, 4400h
+    XOR BX, BX
+    INT 21h
+    JC READ_LINE_CONSOLE
+    TEST DL, 80h
+    JNZ READ_LINE_CONSOLE
+
+    MOV LINE_COUNT, 0
+    MOV LINE_TOO_LONG, 0
+READ_LINE_FILE:
+    MOV BX, 0
+    MOV CX, 1
+    MOV DX, OFFSET LINE_CHAR
+    MOV AH, 3Fh
+    INT 21h
+    JNC READ_LINE_READ_OK
+    JMP READ_LINE_ERROR
+READ_LINE_READ_OK:
+    OR AX, AX
+    JNZ READ_LINE_HAS_BYTE
+    JMP READ_LINE_FILE_EOF
+READ_LINE_HAS_BYTE:
+    MOV AL, LINE_CHAR
+    CMP AL, 1Ah
+    JE READ_LINE_FILE_EOF
+    CMP AL, 0Dh
+    JE READ_LINE_FILE_DONE
+    CMP AL, 0Ah
+    JE READ_LINE_FILE_DONE
+    CMP LINE_COUNT, 79
+    JAE READ_LINE_OVERFLOW
+    MOV BX, LINE_COUNT
+    MOV LINE_BUFFER[BX+2], AL
+    INC LINE_COUNT
+    MOV DL, AL
+    CALL PRINT_CHAR
+    JMP READ_LINE_FILE
+
+READ_LINE_OVERFLOW:
+    MOV LINE_TOO_LONG, 1
+    JMP READ_LINE_FILE
+
+READ_LINE_FILE_EOF:
+    CMP LINE_COUNT, 0
+    JE READ_LINE_EOF
+READ_LINE_FILE_DONE:
+    MOV BX, LINE_COUNT
+    MOV LINE_BUFFER[BX+2], '$'
+    MOV AL, BL
+    MOV LINE_BUFFER+1, AL
+    CALL PRINT_NEWLINE
+    MOV AL, LINE_TOO_LONG
+    OR AL, AL
+    JNZ READ_LINE_TOO_LONG
+    XOR AL, AL
+    JMP READ_LINE_RETURN
+
+READ_LINE_TOO_LONG:
+    MOV AL, 2
+    JMP READ_LINE_RETURN
+
+READ_LINE_CONSOLE:
+    MOV DX, OFFSET LINE_BUFFER
+    MOV AH, 0Ah
+    INT 21h
+    MOV AL, LINE_BUFFER+1
+    XOR AH, AH
+    MOV LINE_COUNT, AX
+    MOV BX, AX
+    MOV LINE_BUFFER[BX+2], '$'
+    CALL PRINT_NEWLINE
+    XOR AL, AL
+    JMP READ_LINE_RETURN
+
+READ_LINE_EOF:
+    MOV LINE_BUFFER+1, 0
+    MOV LINE_BUFFER+2, '$'
+    MOV AL, 1
+    JMP READ_LINE_RETURN
+
+READ_LINE_ERROR:
+    MOV AL, 2
+
+READ_LINE_RETURN:
+    POP BP
+    POP DI
+    POP SI
+    POP DX
+    POP CX
+    POP BX
+    RET
+READ_LINE ENDP
+
+; Purpose: Read exactly four decimal digits without displaying the digits.
+; Inputs: Standard input; PIN_BUFFER receives the four validated digits.
+; Outputs: AL=0 accepted, AL=1 EOF, AL=2 invalid character or length.
+; Registers: Destroys AX; preserves BX, CX, DX, SI, DI, BP, DS, ES.
+; Flags: Unspecified.
+; ISA: INT 21h/AH=08h for console keys, AH=3Fh for redirected input.
+READ_PIN PROC NEAR
+    PUSH BX
+    PUSH CX
+    PUSH DX
+    PUSH SI
+    PUSH DI
+    PUSH BP
+
+    MOV AX, 4400h
+    XOR BX, BX
+    INT 21h
+    JC READ_PIN_CONSOLE
+    TEST DL, 80h
+    JNZ READ_PIN_CONSOLE
+
+    MOV PIN_COUNT, 0
+READ_PIN_FILE:
+    MOV BX, 0
+    MOV CX, 1
+    MOV DX, OFFSET PIN_CHAR
+    MOV AH, 3Fh
+    INT 21h
+    JNC READ_PIN_READ_OK
+    JMP READ_PIN_BAD
+READ_PIN_READ_OK:
+    OR AX, AX
+    JNZ READ_PIN_HAS_BYTE
+    JMP READ_PIN_FILE_EOF
+READ_PIN_HAS_BYTE:
+    MOV AL, PIN_CHAR
+    CMP AL, 0Dh
+    JE READ_PIN_FILE_TERM
+    CMP AL, 0Ah
+    JE READ_PIN_FILE_TERM
+    CMP AL, '0'
+    JAE READ_PIN_DIGIT_LOW
+    JMP READ_PIN_BAD
+READ_PIN_DIGIT_LOW:
+    CMP AL, '9'
+    JBE READ_PIN_DIGIT_HIGH
+    JMP READ_PIN_BAD
+READ_PIN_DIGIT_HIGH:
+    MOV BX, PIN_COUNT
+    CMP BX, 4
+    JB READ_PIN_STORE
+    JMP READ_PIN_BAD
+READ_PIN_STORE:
+    MOV PIN_BUFFER[BX], AL
+    INC PIN_COUNT
+    MOV DL, '*'
+    CALL PRINT_CHAR
+    JMP READ_PIN_FILE
+
+READ_PIN_FILE_TERM:
+    CMP PIN_COUNT, 4
+    JNE READ_PIN_BAD
+    CALL PRINT_NEWLINE
+    XOR AL, AL
+    JMP READ_PIN_RETURN
+
+READ_PIN_FILE_EOF:
+    CMP PIN_COUNT, 0
+    JE READ_PIN_EOF
+    CMP PIN_COUNT, 4
+    JNE READ_PIN_BAD
+    CALL PRINT_NEWLINE
+    XOR AL, AL
+    JMP READ_PIN_RETURN
+
+READ_PIN_CONSOLE:
+    MOV PIN_COUNT, 0
+READ_PIN_CONSOLE_LOOP:
+    MOV AH, 08h
+    INT 21h
+    CMP AL, 0Dh
+    JE READ_PIN_CONSOLE_TERM
+    CMP AL, '0'
+    JAE READ_PIN_CONSOLE_LOW
+    JMP READ_PIN_BAD
+READ_PIN_CONSOLE_LOW:
+    CMP AL, '9'
+    JBE READ_PIN_CONSOLE_HIGH
+    JMP READ_PIN_BAD
+READ_PIN_CONSOLE_HIGH:
+    MOV BX, PIN_COUNT
+    CMP BX, 4
+    JB READ_PIN_CONSOLE_STORE
+    JMP READ_PIN_BAD
+READ_PIN_CONSOLE_STORE:
+    MOV PIN_BUFFER[BX], AL
+    INC PIN_COUNT
+    MOV DL, '*'
+    CALL PRINT_CHAR
+    CMP PIN_COUNT, 4
+    JAE READ_PIN_CONSOLE_COMPLETE
+    JMP READ_PIN_CONSOLE_LOOP
+READ_PIN_CONSOLE_COMPLETE:
+    MOV AH, 08h
+    INT 21h
+    CMP AL, 0Dh
+    JE READ_PIN_CONSOLE_VALID
+    JMP READ_PIN_BAD
+READ_PIN_CONSOLE_VALID:
+    CALL PRINT_NEWLINE
+    XOR AL, AL
+    JMP READ_PIN_RETURN
+
+READ_PIN_CONSOLE_TERM:
+    MOV AL, 2
+    JMP READ_PIN_RETURN
+
+READ_PIN_EOF:
+    MOV AL, 1
+    JMP READ_PIN_RETURN
+
+READ_PIN_BAD:
+    MOV AL, 2
+    CALL PRINT_NEWLINE
+
+READ_PIN_RETURN:
+    POP BP
+    POP DI
+    POP SI
+    POP DX
+    POP CX
+    POP BX
+    RET
+READ_PIN ENDP
+
+; Purpose: Print an unsigned 16-bit value in base ten, including zero.
+; Inputs: AX contains the unsigned value.
+; Outputs: Writes its decimal digits to standard output.
+; Registers: Destroys AX; preserves BX, CX, DX, SI, DI, BP, DS, ES.
+; Flags: Unspecified.
+; ISA: DIV, PUSH/POP digit stack, LOOP, and INT 21h/AH=02h.
+PRINT_DECIMAL PROC NEAR
+    PUSH BX
+    PUSH CX
+    PUSH DX
+
+    OR AX, AX
+    JNZ PRINT_DECIMAL_CONVERT
+    MOV DL, '0'
+    CALL PRINT_CHAR
+    JMP PRINT_DECIMAL_DONE
+
+PRINT_DECIMAL_CONVERT:
+    XOR CX, CX
+    MOV BX, 10
+PRINT_DECIMAL_DIVIDE:
+    XOR DX, DX
+    DIV BX
+    PUSH DX
+    INC CX
+    OR AX, AX
+    JNZ PRINT_DECIMAL_DIVIDE
+PRINT_DECIMAL_DIGIT:
+    POP DX
+    ADD DL, '0'
+    CALL PRINT_CHAR
+    LOOP PRINT_DECIMAL_DIGIT
+
+PRINT_DECIMAL_DONE:
+    POP DX
+    POP CX
+    POP BX
+    RET
+PRINT_DECIMAL ENDP
+
+; Purpose: Parse the next command-tail token and normalize ASCII to uppercase.
+; Inputs: ES is the saved PSP; CMD_POSITION/CMD_REMAINING track its tail.
+; Outputs: TOKEN_BUFFER is NUL-terminated; CF=1 when no token or too long.
+; Registers: Destroys AX; preserves BX, CX, DX, SI, DI, BP.
+; Flags: CF indicates failure; other flags unspecified.
+; ISA: Segment override ES:, indexed operands, and LOOP-free byte scanning.
+NEXT_TOKEN PROC NEAR
+    PUSH BX
+    PUSH CX
+    PUSH SI
+    PUSH DI
+    MOV SI, CMD_POSITION
+    MOV CX, CMD_REMAINING
+    MOV DI, OFFSET TOKEN_BUFFER
+    XOR BX, BX
+
+NEXT_TOKEN_SKIP:
+    JCXZ NEXT_TOKEN_NONE
+    MOV AL, ES:[SI]
+    CMP AL, ' '
+    JNE NEXT_TOKEN_READ
+    INC SI
+    DEC CX
+    JMP NEXT_TOKEN_SKIP
+
+NEXT_TOKEN_READ:
+    JCXZ NEXT_TOKEN_FINISH
+    MOV AL, ES:[SI]
+    CMP AL, ' '
+    JE NEXT_TOKEN_FINISH
+    CMP AL, 'a'
+    JB NEXT_TOKEN_STORE
+    CMP AL, 'z'
+    JA NEXT_TOKEN_STORE
+    SUB AL, 20h
+NEXT_TOKEN_STORE:
+    CMP BX, 31
+    JAE NEXT_TOKEN_NONE
+    MOV [DI+BX], AL
+    INC BX
+    INC SI
+    DEC CX
+    JMP NEXT_TOKEN_READ
+
+NEXT_TOKEN_FINISH:
+    MOV BYTE PTR [DI+BX], 0
+    MOV CMD_POSITION, SI
+    MOV CMD_REMAINING, CX
+    CLC
+    JMP NEXT_TOKEN_RETURN
+
+NEXT_TOKEN_NONE:
+    MOV BYTE PTR [DI], 0
+    MOV CMD_POSITION, SI
+    MOV CMD_REMAINING, CX
+    STC
+
+NEXT_TOKEN_RETURN:
+    POP DI
+    POP SI
+    POP CX
+    POP BX
+    RET
+NEXT_TOKEN ENDP
+
+; Purpose: Recognize one supported switch and prepare its optional argument.
+; Inputs: Saved PSP segment in PSP_SEGMENT.
+; Outputs: SWITCH_KIND is T/I/B/U; PARSE_STATUS is 0 success, 1 unknown,
+;          or 2 missing /U account.
+; Registers: Destroys AX, BX, CX, DX, SI, ES; preserves DI, BP.
+; Flags: Unspecified.
+; ISA: PSP offset 80h, INT 21h/AH=62h-derived segment override ES:.
+PARSE_COMMAND PROC NEAR
+    PUSH DI
+    PUSH BP
+    MOV SWITCH_KIND, 0
+    MOV PARSE_STATUS, 0
+    MOV AX, PSP_SEGMENT
+    MOV ES, AX
+    MOV SI, 81h
+    XOR CX, CX
+    MOV CL, ES:[80h]
+    MOV CMD_POSITION, SI
+    MOV CMD_REMAINING, CX
+    CALL NEXT_TOKEN
+    JC PARSE_COMMAND_DONE
+
+    CMP BYTE PTR TOKEN_BUFFER, '/'
+    JNE PARSE_COMMAND_UNKNOWN
+    CMP BYTE PTR TOKEN_BUFFER+2, 0
+    JNE PARSE_COMMAND_UNKNOWN
+    MOV AL, TOKEN_BUFFER+1
+    CMP AL, 'T'
+    JE PARSE_COMMAND_TEST
+    CMP AL, 'I'
+    JE PARSE_COMMAND_INIT
+    CMP AL, 'B'
+    JE PARSE_COMMAND_BENCH
+    CMP AL, 'U'
+    JE PARSE_COMMAND_UNLOCK
+    JMP PARSE_COMMAND_UNKNOWN
+
+PARSE_COMMAND_TEST:
+    MOV SWITCH_KIND, 'T'
+    CALL NEXT_TOKEN
+    JC PARSE_COMMAND_DONE
+    MOV SI, OFFSET TOKEN_BUFFER
+    MOV DI, OFFSET TEST_OPERATION
+    MOV CX, 33
+    CLD
+    PUSH ES
+    PUSH DS
+    POP ES
+    REP MOVSB
+    POP ES
+    JMP PARSE_COMMAND_DONE
+
+PARSE_COMMAND_INIT:
+    MOV SWITCH_KIND, 'I'
+    JMP PARSE_COMMAND_DONE
+
+PARSE_COMMAND_BENCH:
+    MOV SWITCH_KIND, 'B'
+    JMP PARSE_COMMAND_DONE
+
+PARSE_COMMAND_UNLOCK:
+    MOV SWITCH_KIND, 'U'
+    CALL NEXT_TOKEN
+    JC PARSE_COMMAND_MISSING
+    MOV SI, OFFSET TOKEN_BUFFER
+    MOV DI, OFFSET ACCOUNT_TOKEN
+    MOV CX, 33
+    CLD
+    PUSH ES
+    PUSH DS
+    POP ES
+    REP MOVSB
+    POP ES
+    JMP PARSE_COMMAND_DONE
+
+PARSE_COMMAND_UNKNOWN:
+    MOV PARSE_STATUS, 1
+    JMP PARSE_COMMAND_DONE
+
+PARSE_COMMAND_MISSING:
+    MOV PARSE_STATUS, 2
+
+PARSE_COMMAND_DONE:
+    POP BP
+    POP DI
+    RET
+PARSE_COMMAND ENDP
+
+; Purpose: Compare a NUL-terminated token with a NUL-terminated constant.
+; Inputs: DS:SI and DS:DI point to the strings; CX includes the NUL byte.
+; Outputs: ZF=1 for equal strings, ZF=0 otherwise.
+; Registers: Destroys CX, SI, DI; preserves AX, BX, DX, BP, DS, ES.
+; Flags: ZF reports equality; other flags unspecified.
+; ISA: REPE CMPSB and explicit ES: segment setup.
+TOKEN_EQUALS PROC NEAR
+    PUSH ES
+    PUSH DS
+    POP ES
+    CLD
+    REPE CMPSB
+    POP ES
+    RET
+TOKEN_EQUALS ENDP
+
+; Purpose: Parse an unsigned decimal token into a 16-bit value.
+; Inputs: TOKEN_BUFFER contains one or more ASCII decimal digits.
+; Outputs: AX is the value; CF=1 for non-digits or overflow.
+; Registers: Destroys AX, BX, DX, SI; preserves CX, DI, BP, DS, ES.
+; Flags: CF indicates invalid or out-of-range input.
+; ISA: MUL for overflow detection and register-indirect token access.
+PARSE_U16 PROC NEAR
+    PUSH CX
+    XOR AX, AX
+    XOR SI, SI
+    CMP BYTE PTR TOKEN_BUFFER, 0
+    JE PARSE_U16_BAD
+    MOV BX, 10
+
+PARSE_U16_LOOP:
+    MOV DL, TOKEN_BUFFER[SI]
+    OR DL, DL
+    JZ PARSE_U16_OK
+    CMP DL, '0'
+    JB PARSE_U16_BAD
+    CMP DL, '9'
+    JA PARSE_U16_BAD
+    SUB DL, '0'
+    XOR DH, DH
+    MUL BX
+    OR DX, DX
+    JNZ PARSE_U16_BAD
+    MOV DL, TOKEN_BUFFER[SI]
+    SUB DL, '0'
+    XOR DH, DH
+    ADD AX, DX
+    JC PARSE_U16_BAD
+    INC SI
+    JMP PARSE_U16_LOOP
+
+PARSE_U16_OK:
+    POP CX
+    CLC
+    RET
+
+PARSE_U16_BAD:
+    POP CX
+    STC
+    RET
+PARSE_U16 ENDP
+
+; Purpose: Dispatch the test routine named after the /T switch.
+; Inputs: TEST_OPERATION and any remaining PSP tail tokens.
+; Outputs: Prints one deterministic result and stores its return status.
+; Registers: Destroys AX, BX, CX, DX, SI, DI; preserves DS and ES.
+; Flags: Unspecified.
+; ISA: REPE CMPSB-backed token matching and DOS interrupt-driven I/O.
+RUN_IO_TEST PROC NEAR
+    MOV SI, OFFSET TEST_OPERATION
+    MOV DI, OFFSET OP_STRING
+    MOV CX, 7
+    CALL TOKEN_EQUALS
+    JNE TEST_NOT_STRING
+    JMP TEST_STRING
+
+TEST_NOT_STRING:
+    MOV SI, OFFSET TEST_OPERATION
+    MOV DI, OFFSET OP_CHAR
+    MOV CX, 5
+    CALL TOKEN_EQUALS
+    JNE TEST_NOT_CHAR
+    JMP TEST_CHAR
+
+TEST_NOT_CHAR:
+    MOV SI, OFFSET TEST_OPERATION
+    MOV DI, OFFSET OP_NEWLINE
+    MOV CX, 8
+    CALL TOKEN_EQUALS
+    JNE TEST_NOT_NEWLINE
+    JMP TEST_NEWLINE
+
+TEST_NOT_NEWLINE:
+    MOV SI, OFFSET TEST_OPERATION
+    MOV DI, OFFSET OP_LINE
+    MOV CX, 5
+    CALL TOKEN_EQUALS
+    JNE TEST_NOT_LINE
+    JMP TEST_LINE
+
+TEST_NOT_LINE:
+    MOV SI, OFFSET TEST_OPERATION
+    MOV DI, OFFSET OP_PIN
+    MOV CX, 4
+    CALL TOKEN_EQUALS
+    JNE TEST_NOT_PIN
+    JMP TEST_PIN
+
+TEST_NOT_PIN:
+    MOV SI, OFFSET TEST_OPERATION
+    MOV DI, OFFSET OP_DECIMAL
+    MOV CX, 8
+    CALL TOKEN_EQUALS
+    JNE TEST_NOT_DECIMAL
+    JMP TEST_DECIMAL
+
+TEST_NOT_DECIMAL:
+    MOV SI, OFFSET TEST_OPERATION
+    MOV DI, OFFSET OP_PSP
+    MOV CX, 4
+    CALL TOKEN_EQUALS
+    JNE TEST_NOT_PSP
+    JMP TEST_PSP
+
+TEST_NOT_PSP:
+    MOV DX, OFFSET MSG_UNKNOWN_TEST
+    CALL PRINT_STRING
+    MOV NUMBER_STATUS, 1
+    RET
+
+TEST_STRING:
+    MOV DX, OFFSET MSG_STRING
+    CALL PRINT_STRING
+    XOR AL, AL
+    MOV NUMBER_STATUS, AL
+    RET
+
+TEST_CHAR:
+    MOV DL, MSG_CHAR
+    CALL PRINT_CHAR
+    CALL PRINT_NEWLINE
+    XOR AL, AL
+    MOV NUMBER_STATUS, AL
+    RET
+
+TEST_NEWLINE:
+    CALL PRINT_NEWLINE
+    XOR AL, AL
+    MOV NUMBER_STATUS, AL
+    RET
+
+TEST_LINE:
+    CALL READ_LINE
+    MOV LINE_STATUS, AL
+    MOV NUMBER_STATUS, AL
+    CMP AL, 1
+    JE TEST_LINE_EOF
+    CMP AL, 2
+    JE TEST_LINE_LONG
+    MOV DX, OFFSET MSG_LINE_PREFIX
+    CALL PRINT_STRING
+    MOV DX, OFFSET LINE_BUFFER+2
+    MOV AH, 09h
+    INT 21h
+    CALL PRINT_NEWLINE
+    RET
+
+TEST_LINE_EOF:
+    MOV DX, OFFSET MSG_LINE_EOF
+    CALL PRINT_STRING
+    RET
+
+TEST_LINE_LONG:
+    MOV DX, OFFSET MSG_LINE_LONG
+    CALL PRINT_STRING
+    RET
+
+TEST_PIN:
+    CALL READ_PIN
+    MOV PIN_STATUS, AL
+    MOV NUMBER_STATUS, AL
+    CMP AL, 0
+    JE TEST_PIN_VALID
+    CMP AL, 1
+    JE TEST_PIN_ENDED
+    MOV DX, OFFSET MSG_PIN_BAD
+    CALL PRINT_STRING
+    RET
+
+TEST_PIN_VALID:
+    MOV DX, OFFSET MSG_PIN_OK
+    CALL PRINT_STRING
+    RET
+
+TEST_PIN_ENDED:
+    MOV DX, OFFSET MSG_PIN_EOF
+    CALL PRINT_STRING
+    RET
+
+TEST_DECIMAL:
+    CALL NEXT_TOKEN
+    JC TEST_DECIMAL_BAD
+    CALL PARSE_U16
+    JC TEST_DECIMAL_BAD
+    MOV NUMBER_VALUE, AX
+    CALL PRINT_DECIMAL
+    CALL PRINT_NEWLINE
+    XOR AL, AL
+    MOV NUMBER_STATUS, AL
+    RET
+
+TEST_DECIMAL_BAD:
+    MOV DX, OFFSET MSG_BAD_NUMBER
+    CALL PRINT_STRING
+    MOV NUMBER_STATUS, 1
+    RET
+
+TEST_PSP:
+    MOV AH, 62h
+    INT 21h
+    CMP BX, PSP_SEGMENT
+    JNE TEST_PSP_BAD
+    MOV DX, OFFSET MSG_PSP_OK
+    CALL PRINT_STRING
+    XOR AL, AL
+    MOV NUMBER_STATUS, AL
+    RET
+
+TEST_PSP_BAD:
+    MOV DX, OFFSET MSG_PSP_BAD
+    CALL PRINT_STRING
+    MOV NUMBER_STATUS, 1
+    RET
+RUN_IO_TEST ENDP
