@@ -1,0 +1,21 @@
+@echo off
+
+echo START > C:\TOOLS\STAGE0.LOG
+
+call C:\TOOLS\BUILD.BAT
+if errorlevel 1 goto BUILD_FAILED
+
+C:\TOOLS\HELLO.EXE > C:\TOOLS\HELLO.OUT
+echo 0 > C:\TOOLS\HELLO.ERR
+if errorlevel 2 echo 2 > C:\TOOLS\HELLO.ERR
+
+C:\TOOLS\READKEY.EXE < C:\TESTS\READKEY.IN > C:\TOOLS\READKEY.OUT
+echo 1 > C:\TOOLS\READKEY.ERR
+if not errorlevel 1 echo 0 > C:\TOOLS\READKEY.ERR
+
+echo END >> C:\TOOLS\STAGE0.LOG
+exit
+
+:BUILD_FAILED
+echo BUILD_FAILED >> C:\TOOLS\STAGE0.LOG
+exit

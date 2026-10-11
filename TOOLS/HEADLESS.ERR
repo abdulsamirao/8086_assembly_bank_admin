@@ -1,0 +1,75 @@
+date       time         | 
+2026-10-11 16:01:41.754 | arguments: C:\\Users\\abdul\\AppData\\Local\\Programs\\DOSBox\ Staging\\dosbox.exe -conf TOOLS\\HEADLESS.CONF
+2026-10-11 16:01:41.759 | Current dir: C:\practical\CALD_PROJECT
+2026-10-11 16:01:41.760 | stderr verbosity: 0
+2026-10-11 16:01:41.761 | -----------------------------------
+2026-10-11 16:01:41.763 | dosbox-staging version 0.83.0 (7b400)
+2026-10-11 16:01:41.764 | ---
+2026-10-11 16:01:41.766 | Loguru version 2.1.0 initialised
+2026-10-11 16:01:41.784 | CONFIG: Loaded primary config file 'C:\Users\abdul\AppData\Local\DOSBox\dosbox-staging.conf'
+2026-10-11 16:01:41.786 | CONFIG: Loaded custom config file 'TOOLS\HEADLESS.CONF'
+2026-10-11 16:01:41.791 | LOCALE: Using internal English language messages (detected from 'en-US, ar-SA, en-PK, ur-PK, tr; GUI: en-US')
+2026-10-11 16:01:41.814 | SDL: Version 2.32.10 initialised
+2026-10-11 16:01:41.815 | SDL: windows video initialised
+2026-10-11 16:01:41.815 | VIDEO: Using the DOS video modes' refresh rate
+2026-10-11 16:01:41.816 | DOS: Setting hard disk disk speed to maximum
+2026-10-11 16:01:41.816 | DOS: Setting floppy disk speed to maximum
+2026-10-11 16:01:41.827 | MEMORY: Using 4096 DOS memory pages (16 MB) at address: 0000019A37FC3060
+2026-10-11 16:01:41.834 | VIDEO: Initialised S3 Trio64 VESA 2.0 compatible with 4 MB of FP DRAM supporting 89 modes
+2026-10-11 16:01:41.843 | VOODOO: Initialized with 4 MB of RAM, 8 threads, and bilinear filtering
+2026-10-11 16:01:41.843 | CAPTURE: Image capturer started
+2026-10-11 16:01:44.735 | SDL: wasapi audio initialised
+2026-10-11 16:01:44.736 | MIXER: Initialised stereo 48000 Hz audio with 1024 sample frame buffer
+2026-10-11 16:01:44.736 | MIXER: Reverb disabled
+2026-10-11 16:01:44.736 | MIXER: Master compressor enabled
+2026-10-11 16:01:44.739 | MPU-401: Running in intelligent mode on ports 330h and 331h
+2026-10-11 16:01:44.926 | MIDI: Opened device 'win32'
+2026-10-11 16:01:44.928 | OPL: Operating at 49716 Hz and downsampling to the output rate
+2026-10-11 16:01:44.928 | OPL: Noise gate enabled
+2026-10-11 16:01:44.928 | OPL: Running OPL3 on ports 220h and 388h
+2026-10-11 16:01:44.928 | OPL: Sound Blaster 16 OPL output filter enabled
+2026-10-11 16:01:44.929 | DMA: Initialised primary controller
+2026-10-11 16:01:44.929 | DMA: Initialised secondary controller
+2026-10-11 16:01:44.929 | SB: Operating at 22050 Hz and upsampling to the output rate
+2026-10-11 16:01:44.930 | SB16: Modern DAC output filter enabled
+2026-10-11 16:01:44.930 | SB16: Setting 'BLASTER' environment variable to 'A220 I7 D1 H5 T6'
+2026-10-11 16:01:44.930 | SB16: Running on port 220h, IRQ 7, DMA 1, and high DMA 5
+2026-10-11 16:01:44.931 | PCSPEAKER: Operating at 32000 Hz and upsampling to the output rate
+2026-10-11 16:01:44.931 | PCSPEAKER: Initialised impulse model
+2026-10-11 16:01:44.931 | PCSPEAKER: High-pass filter enabled (18 dB/oct at 120 Hz)
+2026-10-11 16:01:44.931 | PCSPEAKER: Low-pass filter enabled (18 dB/oct at 4300 Hz)
+2026-10-11 16:01:44.956 | LOCALE: Country detected from 'en-US'
+2026-10-11 16:01:44.956 | LOCALE: Loading native locale for country 1 - 'United States'
+2026-10-11 16:01:44.957 | LOCALE: Using numeric/time/date format detected from host OS
+2026-10-11 16:01:44.959 | LOCALE: Keyboard layout and code page detected from '00000409;00000401;0000041f;00000420'
+2026-10-11 16:01:44.965 | LOCALE: Loaded code page 864 - 'Arabic'
+2026-10-11 16:01:44.971 | LOCALE: Loaded keyboard layout 'ar470' - 'Arabic (QWERTY/Arabic)'
+2026-10-11 16:01:44.975 | CONFIG: Loaded auto-mounted drive config file 'C:\Users\abdul\AppData\Local\Programs\DOSBox Staging\resources\drives\y.conf'
+2026-10-11 16:01:44.976 | AUTOEXEC: Using autoexec from one or more joined sections
+2026-10-11 16:01:44.976 | DISPLAY: Using 854x640 window size in windowed mode on display-0
+2026-10-11 16:01:45.268 | OPENGL: Version: 3.3, GLSL version: 3.30 - Build 32.0.101.7077, vendor: Intel
+2026-10-11 16:01:45.271 | RENDER: Using adaptive CRT shader based on the graphics standard of the video mode
+2026-10-11 16:01:45.271 | RENDER: Auto-switched to shader 'crt/crt-hyllian:hercules'
+2026-10-11 16:01:45.309 | VGA: Double scanning VGA video modes enabled
+2026-10-11 16:01:45.309 | VGA: Pixel doubling enabled
+2026-10-11 16:01:45.311 | MOUSE: Will be captured after the first left or right button click
+2026-10-11 16:01:45.312 | MOUSE: Middle button will capture/release the mouse (clicks not sent to the game/program)
+2026-10-11 16:01:45.312 | RENDER: Deinterlacing disabled
+2026-10-11 16:01:45.313 | RENDER: Dedithering disabled
+2026-10-11 16:01:45.384 | MAPPER: No joysticks found
+2026-10-11 16:01:45.385 | MAPPER: Loaded default key bindings
+2026-10-11 16:01:45.401 | RENDER: Auto-switched to P22 CRT color profile
+2026-10-11 16:01:45.401 | RENDER: Auto-switched to 7800K colour temperature
+2026-10-11 16:01:45.401 | RENDER: Auto-switched to shader 'crt/vga-1080p'
+2026-10-11 16:01:45.426 | DISPLAY: VGA 720x400 16-colour text mode 03h at 70.087 Hz, scaled to 1067x800 pixels with 1:1.35 (20:27) pixel aspect ratio
+2026-10-11 16:01:45.426 | DISPLAY: Presenting at DOS rate without vsync
+2026-10-11 16:01:45.433 | MOUSE (DOS): Built-in driver is simulating a 2 buttons model
+2026-10-11 16:01:45.846 | SHELL: Redirect input from C:\TESTS\READKEY.IN
+2026-10-11 16:01:45.854 | PCSPEAKER: Shutting down impulse model
+2026-10-11 16:01:45.854 | OPL: Shutting down OPL3
+2026-10-11 16:01:45.855 | SB16: Shutting down
+2026-10-11 16:01:45.958 | MPU-401: Shutting down
+2026-10-11 16:01:46.027 | CAPTURE: Image capturer shutting down
+2026-10-11 16:01:46.028 | DMA: Shutting down primary controller
+2026-10-11 16:01:46.028 | DMA: Shutting down secondary controller
+2026-10-11 16:01:46.088 | atexit
