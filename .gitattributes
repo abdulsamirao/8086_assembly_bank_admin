@@ -1,0 +1,5 @@
+*.ASM text eol=crlf
+*.INC text eol=crlf
+*.IN text eol=crlf
+*.EXP text eol=crlf
+*.ARG text eol=crlf
