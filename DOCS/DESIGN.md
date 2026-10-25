@@ -35,22 +35,31 @@ The application test executable is `TOOLS\BANK.EXE`, built from [BANK.ASM](../SR
 
 ### EOF and masked-input policy
 
-`READ_LINE` and `READ_PIN` first use DOS IOCTL function 44h to tell a console handle from a redirected file handle. Console line input uses function 0Ah and intentionally waits for the user; console PIN input uses function 08h and masks each accepted digit with `*`. With redirected input, the procedures read standard handle 0 through function 3Fh so they can observe an actual zero-byte read. `READ_LINE` returns AL=1 and prints `EOF` when no bytes remain before a line; `READ_PIN` returns AL=1 and prints `PIN INPUT ENDED` when the stream ends before any digit. Partial PINs are invalid, and neither redirected EOF case waits for more input. The empty `S05.IN` and `S07.IN` cases verify both paths.
+`READ_LINE` and `READ_PIN` first use DOS IOCTL function 44h to tell a console handle from a redirected file handle. Console line input uses function 0Ah and intentionally waits for the user; console PIN input uses function 08h and masks each accepted digit with `*`. With redirected input, the procedures read standard handle 0 through function 3Fh so they can observe an actual zero-byte read. The file-input line rule is shared by both routines: CR ends a line, and an LF encountered as the first byte read by a file-mode call is discarded. This consumes the LF left after a CR without treating LF as a line terminator; it also lets a line-reading call hand the following CRLF PIN line to `READ_PIN`. `READ_LINE` returns AL=1 and prints `EOF` when no bytes remain before a line; `READ_PIN` returns AL=1 and prints `PIN INPUT ENDED` when the stream ends before any digit. Partial PINs are invalid, and neither redirected EOF case waits for more input. The empty `S05.IN` and `S07.IN` cases verify both paths. `L02` reads two consecutive CRLF lines, `L03` reads a blank CRLF line followed by text, and `L04` reads an account-number line then a PIN line from one CRLF input file.
 
 ### Procedure walk-through
 
 - `MAIN` obtains the PSP segment with DOS function 62h before changing `DS`, saves it in `PSP_SEGMENT`, then sets `DS`/`ES` to the program data segment. Its test dispatcher sends `/T` selectors to the corresponding I/O routine; `/I`, `/B`, and `/U` are recognized and reported without implementing later-stage actions. `AX`, `BX`, `SI`, `DS`, and `ES` matter during PSP setup; it exits through function 4Ch.
 - `PRINT_STRING` sends the `$`-terminated string at `DS:DX` through function 09h. `DX` is the pointer and `AX` selects the DOS call; it destroys `AX`.
 - `PRINT_CHAR` sends `DL` through function 02h. `DL` is the character; it destroys `AX`.
-- `PRINT_NEWLINE` calls `PRINT_CHAR` once for CR and once for LF, saving/restoring `AX` and `DX` so its caller's character/pointer state survives.
+- `PRINT_NUL` prints a NUL-terminated string by loading each byte with `LODSB` and sending nonzero bytes through DOS function 02h. `DS:SI` identifies the string; it saves/restores `AX`, `DX`, and `SI`, and uses `CLD` so the string instruction advances toward the terminator.
+- `PRINT_NEWLINE` calls `PRINT_CHAR` once for CR and once for LF, saving/restoring `AX` and `DX` so its caller's character/pointer state survives. Its ISA examples are DOS `INT 21h/AH=02h`, near `CALL`, and `PUSH`/`POP`.
 - `READ_LINE` uses function 0Ah for interactive buffered input. For redirected files it reads one byte with function 3Fh until CR/LF, Ctrl-Z, or EOF, echoes the characters, enforces the line buffer limit, and returns AL=0/1/2 for success/EOF/too-long. `BX` indexes the buffer, `DX` supplies DOS buffers, and the status in `AL` is the caller-visible result.
 - `READ_PIN` gets four decimal digits without echoing the digits; accepted bytes are saved in `PIN_BUFFER` and each is replaced on screen by `*`. Console reads use function 08h; redirected reads use function 3Fh to make EOF observable. `BX` indexes the 4-byte buffer, and AL reports success/EOF/invalid input.
 - `PRINT_DECIMAL` repeatedly divides unsigned AX by 10, pushes remainders, then pops and emits them in reverse order. The explicit zero case avoids printing no digits. `BX` holds 10, `CX` counts digits for `LOOP`, and `DX:AX` is the DIV dividend.
-- `NEXT_TOKEN` scans the PSP tail using `ES:SI`, skips spaces, uppercases ASCII lowercase letters, and writes a NUL-terminated token. `CMD_POSITION`/`CMD_REMAINING` carry the parse cursor across calls; CF distinguishes no token or an overlong token.
-- `PARSE_COMMAND` initializes the cursor from PSP offset 80h/81h, recognizes `/T`, `/I`, `/B`, `/U`, and requires an argument after `/U`. It uses `REP MOVSB` to copy the selected test/account token into its destination. `ES` must point at the PSP while reading the tail and at `DS` while copying.
+- `NEXT_TOKEN` loads `ES` from `PSP_SEGMENT` on entry, scans the PSP tail using `ES:SI`, skips spaces, uppercases ASCII lowercase letters, and writes a NUL-terminated token. `CMD_POSITION`/`CMD_REMAINING` carry the parse cursor across calls; CF distinguishes no token or an overlong token. It preserves the caller's `ES`.
+- `PARSE_COMMAND` initializes the cursor from PSP offset 80h/81h, recognizes `/T`, `/I`, `/B`, `/U`, and requires an argument after `/U`. It uses `REP MOVSB` to copy the selected test/account token into its destination, temporarily setting `ES=DS` for the copy, and restores the caller's original `ES` on return.
 - `TOKEN_EQUALS` compares NUL-terminated strings with `REPE CMPSB`; it temporarily sets `ES=DS` and executes `CLD` so traversal proceeds forward. ZF reports equality.
-- `PARSE_U16` converts a decimal token into AX and detects 16-bit overflow by checking the high word from `MUL`; CF marks invalid input.
-- `RUN_IO_TEST` maps the selector token to string, character, newline, line, PIN, decimal, or PSP verification. It records nonzero EOF/error status for `MAIN` to return through DOS function 4Ch.
+- `PARSE_U16` converts a decimal token into AX and detects 16-bit overflow by checking the high word from `MUL`; it retains the validated digit in `CX` between the multiply and accumulation instead of rescanning the token. CF marks invalid input.
+- `RUN_IO_TEST` maps the selector token to string, character, newline, line, two-line, account/PIN, PIN, decimal, or PSP verification. It records nonzero EOF/error status for `MAIN` to return through DOS function 4Ch.
+
+### Stage 1 switch and line regression cases
+
+`/U <acct>` is currently only a Stage 1 command-tail parsing placeholder; Stage 5 will replace it with FR-4 account unlock behavior. The Stage 1 output contract for `/U 1001` is `UNLOCK 1001` followed by CRLF, with exit code 0. `SW06` tests `/U 1001`; `SW07` tests lowercase `/u 1001` and requires the same output. `SW03` keeps the missing-argument case `/U`, requiring exit code 1. Their `.EXP` files are authored from this contract, not captured from program output, and byte-for-byte comparison rejects any extra trailing bytes. `TESTS\SW06.EXP` is exactly 13 bytes:
+
+```text
+55 4E 4C 4F 43 4B 20 31 30 30 31 0D 0A
+```
 
 ### 8086 checks and linter limits
 
@@ -58,4 +67,4 @@ The temp-only `.8086` check confirms TASM 4.1 rejects `PUSHA`. It does **not** r
 
 `TOOLS\LINT8086.PS1` therefore checks actual source text as well as the assembler result. It flags forbidden mnemonics/registers, immediate `PUSH`/`IMUL`, and shift/rotate count literals other than 1. It checks `.ASM`/`.INC` sources under `SRC`; it is not a full MASM/TASM parser and does not evaluate macros, `EQU`-defined immediates, conditional assembly, generated code, or all possible arithmetic expressions. It flags an explicitly written `Jcc NEAR`, but does not calculate every branch distance; TASM's assembler diagnostics remain the check for a branch that cannot reach its target.
 
-Stage 1 was verified through `TOOLS\RUNHOST.PS1`: all 19 `.IN`/`.EXP` output cases matched, including decimal values 0, 9, 10, 305, and 65535; lowercase `/t`; unknown and missing switches; extra spaces; PSP preservation; masked PIN; and redirected EOF. The run also built `BANK.ASM` with `IO.INC`, verified the TASM listing, classified the forbidden-opcode probes, and passed the source linter.
+Stage 1 was verified through `TOOLS\RUNHOST.PS1`: all `.IN`/`.EXP` output cases matched, including decimal values 0, 9, 10, 305, and 65535; lowercase switch parsing; unknown and missing switches; extra spaces; PSP preservation; masked PIN; redirected EOF; CRLF multi-line, blank-line, and account/PIN streams; and the `/U` placeholder and lowercase variant. The run also built `BANK.ASM` with `IO.INC`, verified the TASM listing, classified the forbidden-opcode probes, and passed the source linter.

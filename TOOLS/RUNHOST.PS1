@@ -238,6 +238,16 @@ if ($exitCodes['HELLO'] -ne '2') {
 if ($exitCodes['READKEY'] -ne '0') {
     throw "Expected READKEY exit code 0, got '$($exitCodes['READKEY'])'."
 }
+$expectedSwitchExitCodes = @{
+    'SW03' = '1'
+    'SW06' = '0'
+    'SW07' = '0'
+}
+foreach ($name in $expectedSwitchExitCodes.Keys) {
+    if ($exitCodes[$name] -ne $expectedSwitchExitCodes[$name]) {
+        throw "Expected $name exit code $($expectedSwitchExitCodes[$name]), got '$($exitCodes[$name])'."
+    }
+}
 
 Write-Output '--- DOSBox stdout ---'
 Get-Content $stdout

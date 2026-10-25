@@ -12,6 +12,32 @@ PRINT_STRING PROC NEAR
     RET
 PRINT_STRING ENDP
 
+; Purpose: Print a NUL-terminated string without reading past its terminator.
+; Inputs: DS:SI points to the first string byte.
+; Outputs: Writes the string through DOS function 02h.
+; Registers: Preserves all general and segment registers.
+; Flags: Unspecified.
+; ISA: LODSB, CLD, and INT 21h/AH=02h using DS:SI.
+PRINT_NUL PROC NEAR
+    PUSH AX
+    PUSH DX
+    PUSH SI
+    CLD
+PRINT_NUL_NEXT:
+    LODSB
+    OR AL, AL
+    JZ PRINT_NUL_DONE
+    MOV DL, AL
+    MOV AH, 02h
+    INT 21h
+    JMP PRINT_NUL_NEXT
+PRINT_NUL_DONE:
+    POP SI
+    POP DX
+    POP AX
+    RET
+PRINT_NUL ENDP
+
 ; Purpose: Write one character to standard output.
 ; Inputs: DL contains the character.
 ; Outputs: Writes one character through DOS function 02h.
@@ -29,7 +55,7 @@ PRINT_CHAR ENDP
 ; Outputs: Writes CR then LF.
 ; Registers: Preserves all general and segment registers.
 ; Flags: Unspecified.
-; ISA: INT 21h/AH=02h and register-indirect character output.
+; ISA: INT 21h/AH=02h, near CALL, and PUSH/POP.
 PRINT_NEWLINE PROC NEAR
     PUSH AX
     PUSH DX
@@ -59,12 +85,17 @@ READ_LINE PROC NEAR
     MOV AX, 4400h
     XOR BX, BX
     INT 21h
-    JC READ_LINE_CONSOLE
+    JNC READ_LINE_IOCTL_OK
+    JMP READ_LINE_CONSOLE
+READ_LINE_IOCTL_OK:
     TEST DL, 80h
-    JNZ READ_LINE_CONSOLE
+    JZ READ_LINE_FILE_SETUP
+    JMP READ_LINE_CONSOLE
 
+READ_LINE_FILE_SETUP:
     MOV LINE_COUNT, 0
     MOV LINE_TOO_LONG, 0
+    MOV BP, 1
 READ_LINE_FILE:
     MOV BX, 0
     MOV CX, 1
@@ -79,11 +110,15 @@ READ_LINE_READ_OK:
     JMP READ_LINE_FILE_EOF
 READ_LINE_HAS_BYTE:
     MOV AL, LINE_CHAR
+    OR BP, BP
+    JZ READ_LINE_CHECK_CR
+    XOR BP, BP
+    CMP AL, 0Ah
+    JE READ_LINE_FILE
+READ_LINE_CHECK_CR:
     CMP AL, 1Ah
     JE READ_LINE_FILE_EOF
     CMP AL, 0Dh
-    JE READ_LINE_FILE_DONE
-    CMP AL, 0Ah
     JE READ_LINE_FILE_DONE
     CMP LINE_COUNT, 79
     JAE READ_LINE_OVERFLOW
@@ -166,11 +201,16 @@ READ_PIN PROC NEAR
     MOV AX, 4400h
     XOR BX, BX
     INT 21h
-    JC READ_PIN_CONSOLE
+    JNC READ_PIN_IOCTL_OK
+    JMP READ_PIN_CONSOLE
+READ_PIN_IOCTL_OK:
     TEST DL, 80h
-    JNZ READ_PIN_CONSOLE
+    JZ READ_PIN_FILE_SETUP
+    JMP READ_PIN_CONSOLE
 
+READ_PIN_FILE_SETUP:
     MOV PIN_COUNT, 0
+    MOV BP, 1
 READ_PIN_FILE:
     MOV BX, 0
     MOV CX, 1
@@ -185,9 +225,13 @@ READ_PIN_READ_OK:
     JMP READ_PIN_FILE_EOF
 READ_PIN_HAS_BYTE:
     MOV AL, PIN_CHAR
-    CMP AL, 0Dh
-    JE READ_PIN_FILE_TERM
+    OR BP, BP
+    JZ READ_PIN_CHECK_CR
+    XOR BP, BP
     CMP AL, 0Ah
+    JE READ_PIN_FILE
+READ_PIN_CHECK_CR:
+    CMP AL, 0Dh
     JE READ_PIN_FILE_TERM
     CMP AL, '0'
     JAE READ_PIN_DIGIT_LOW
@@ -325,16 +369,19 @@ PRINT_DECIMAL_DONE:
 PRINT_DECIMAL ENDP
 
 ; Purpose: Parse the next command-tail token and normalize ASCII to uppercase.
-; Inputs: ES is the saved PSP; CMD_POSITION/CMD_REMAINING track its tail.
+; Inputs: PSP_SEGMENT identifies the PSP; CMD_POSITION/CMD_REMAINING track its tail.
 ; Outputs: TOKEN_BUFFER is NUL-terminated; CF=1 when no token or too long.
-; Registers: Destroys AX; preserves BX, CX, DX, SI, DI, BP.
+; Registers: Destroys AX; preserves BX, CX, DX, SI, DI, BP, ES.
 ; Flags: CF indicates failure; other flags unspecified.
-; ISA: Segment override ES:, indexed operands, and LOOP-free byte scanning.
+; ISA: ES: override and based-indexed [DI+BX] memory addressing.
 NEXT_TOKEN PROC NEAR
+    PUSH ES
     PUSH BX
     PUSH CX
     PUSH SI
     PUSH DI
+    MOV AX, PSP_SEGMENT
+    MOV ES, AX
     MOV SI, CMD_POSITION
     MOV CX, CMD_REMAINING
     MOV DI, OFFSET TOKEN_BUFFER
@@ -386,6 +433,7 @@ NEXT_TOKEN_RETURN:
     POP SI
     POP CX
     POP BX
+    POP ES
     RET
 NEXT_TOKEN ENDP
 
@@ -393,10 +441,11 @@ NEXT_TOKEN ENDP
 ; Inputs: Saved PSP segment in PSP_SEGMENT.
 ; Outputs: SWITCH_KIND is T/I/B/U; PARSE_STATUS is 0 success, 1 unknown,
 ;          or 2 missing /U account.
-; Registers: Destroys AX, BX, CX, DX, SI, ES; preserves DI, BP.
+; Registers: Destroys AX, BX, CX, DX, SI; preserves DI, BP, ES.
 ; Flags: Unspecified.
 ; ISA: PSP offset 80h, INT 21h/AH=62h-derived segment override ES:.
 PARSE_COMMAND PROC NEAR
+    PUSH ES
     PUSH DI
     PUSH BP
     MOV SWITCH_KIND, 0
@@ -474,6 +523,7 @@ PARSE_COMMAND_MISSING:
 PARSE_COMMAND_DONE:
     POP BP
     POP DI
+    POP ES
     RET
 PARSE_COMMAND ENDP
 
@@ -517,13 +567,11 @@ PARSE_U16_LOOP:
     JA PARSE_U16_BAD
     SUB DL, '0'
     XOR DH, DH
+    MOV CX, DX
     MUL BX
     OR DX, DX
     JNZ PARSE_U16_BAD
-    MOV DL, TOKEN_BUFFER[SI]
-    SUB DL, '0'
-    XOR DH, DH
-    ADD AX, DX
+    ADD AX, CX
     JC PARSE_U16_BAD
     INC SI
     JMP PARSE_U16_LOOP
@@ -579,6 +627,14 @@ TEST_NOT_NEWLINE:
 
 TEST_NOT_LINE:
     MOV SI, OFFSET TEST_OPERATION
+    MOV DI, OFFSET OP_TWOLINE
+    MOV CX, 8
+    CALL TOKEN_EQUALS
+    JNE TEST_NOT_TWOLINE
+    JMP TEST_TWOLINE
+
+TEST_NOT_TWOLINE:
+    MOV SI, OFFSET TEST_OPERATION
     MOV DI, OFFSET OP_PIN
     MOV CX, 4
     CALL TOKEN_EQUALS
@@ -586,6 +642,14 @@ TEST_NOT_LINE:
     JMP TEST_PIN
 
 TEST_NOT_PIN:
+    MOV SI, OFFSET TEST_OPERATION
+    MOV DI, OFFSET OP_ACCTPIN
+    MOV CX, 8
+    CALL TOKEN_EQUALS
+    JNE TEST_NOT_ACCTPIN
+    JMP TEST_ACCTPIN
+
+TEST_NOT_ACCTPIN:
     MOV SI, OFFSET TEST_OPERATION
     MOV DI, OFFSET OP_DECIMAL
     MOV CX, 8
@@ -636,6 +700,22 @@ TEST_LINE:
     JE TEST_LINE_EOF
     CMP AL, 2
     JE TEST_LINE_LONG
+    JMP TEST_PRINT_LINE
+
+TEST_TWOLINE:
+    CALL READ_LINE
+    OR AL, AL
+    JNZ TEST_INPUT_ERROR
+    CALL TEST_PRINT_LINE
+    CALL READ_LINE
+    OR AL, AL
+    JNZ TEST_INPUT_ERROR
+    CALL TEST_PRINT_LINE
+    XOR AL, AL
+    MOV NUMBER_STATUS, AL
+    RET
+
+TEST_PRINT_LINE:
     MOV DX, OFFSET MSG_LINE_PREFIX
     CALL PRINT_STRING
     MOV DX, OFFSET LINE_BUFFER+2
@@ -643,6 +723,13 @@ TEST_LINE:
     INT 21h
     CALL PRINT_NEWLINE
     RET
+
+TEST_INPUT_ERROR:
+    MOV LINE_STATUS, AL
+    MOV NUMBER_STATUS, AL
+    CMP AL, 1
+    JE TEST_LINE_EOF
+    JMP TEST_LINE_LONG
 
 TEST_LINE_EOF:
     MOV DX, OFFSET MSG_LINE_EOF
@@ -673,6 +760,27 @@ TEST_PIN_VALID:
 
 TEST_PIN_ENDED:
     MOV DX, OFFSET MSG_PIN_EOF
+    CALL PRINT_STRING
+    RET
+
+TEST_ACCTPIN:
+    CALL READ_LINE
+    OR AL, AL
+    JNZ TEST_INPUT_ERROR
+    MOV DX, OFFSET MSG_ACCOUNT_PREFIX
+    CALL PRINT_STRING
+    MOV DX, OFFSET LINE_BUFFER+2
+    MOV AH, 09h
+    INT 21h
+    CALL PRINT_NEWLINE
+    CALL READ_PIN
+    MOV PIN_STATUS, AL
+    MOV NUMBER_STATUS, AL
+    CMP AL, 0
+    JE TEST_PIN_VALID
+    CMP AL, 1
+    JE TEST_PIN_ENDED
+    MOV DX, OFFSET MSG_PIN_BAD
     CALL PRINT_STRING
     RET
 
