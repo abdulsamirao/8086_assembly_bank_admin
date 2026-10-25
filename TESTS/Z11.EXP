@@ -1,0 +1,53 @@
+Admin ID: 9001
+Admin PIN: ****
+Login successful
+1 List accounts
+2 View account
+3 Create account
+4 Lock/Unlock
+5 Reset customer PIN
+6 Adjust balance
+7 Summary report
+8 Audit log
+9 Exit
+Choice: 6
+Account number: 1001
+C (credit) or D (debit): D
+Amount: 0
+Invalid amount
+1 List accounts
+2 View account
+3 Create account
+4 Lock/Unlock
+5 Reset customer PIN
+6 Adjust balance
+7 Summary report
+8 Audit log
+9 Exit
+Choice: 6
+Account number: 1001
+C (credit) or D (debit): D
+Amount: 1000.01
+Insufficient funds
+1 List accounts
+2 View account
+3 Create account
+4 Lock/Unlock
+5 Reset customer PIN
+6 Adjust balance
+7 Summary report
+8 Audit log
+9 Exit
+Choice: 2
+Account number: 1001
+1001  ACTIVE  1000.00
+1 List accounts
+2 View account
+3 Create account
+4 Lock/Unlock
+5 Reset customer PIN
+6 Adjust balance
+7 Summary report
+8 Audit log
+9 Exit
+Choice: 9

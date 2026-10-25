@@ -1,0 +1,27 @@
+Admin ID: 9001
+Admin PIN: ****
+Login successful
+1 List accounts
+2 View account
+3 Create account
+4 Lock/Unlock
+5 Reset customer PIN
+6 Adjust balance
+7 Summary report
+8 Audit log
+9 Exit
+Choice: 7
+ACCOUNTS: 3
+ACTIVE: 2
+LOCKED: 1
+TOTAL: 19999999999.98
+1 List accounts
+2 View account
+3 Create account
+4 Lock/Unlock
+5 Reset customer PIN
+6 Adjust balance
+7 Summary report
+8 Audit log
+9 Exit
+Choice: 9

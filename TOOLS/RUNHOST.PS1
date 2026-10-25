@@ -7,7 +7,8 @@ $dosbox = 'C:\Users\abdul\AppData\Local\Programs\DOSBox Staging\dosbox.exe'
 $checkDirectory = Join-Path $root 'TOOLS\CHK8086'
 $stdout = Join-Path $root 'TOOLS\HEADLESS.OUT'
 $stderr = Join-Path $root 'TOOLS\HEADLESS.LOG'
-$testInputs = @(Get-ChildItem (Join-Path $root 'TESTS') -Filter '*.IN' -File)
+$testInputs = @(Get-ChildItem (Join-Path $root 'TESTS') -Filter '*.IN' -File |
+    Sort-Object Name)
 if ($testInputs.Count -eq 0) {
     throw 'No test input files found in TESTS.'
 }
@@ -64,6 +65,16 @@ foreach ($input in $testInputs) {
         }
     }
     $label = 'CASE_' + $input.BaseName.ToUpperInvariant()
+    $expectedDataPath = Join-Path $input.DirectoryName ($input.BaseName + '.DAT')
+    $hasDataExpectation = Test-Path $expectedDataPath
+    $initialDataPath = Join-Path $input.DirectoryName ($input.BaseName + '.INI')
+    $hasInitialData = Test-Path $initialDataPath
+    $expectedAuditPath = Join-Path $input.DirectoryName ($input.BaseName + '.LOG')
+    $hasAuditExpectation = Test-Path $expectedAuditPath
+    if ($hasInitialData) {
+        $caseLines.Add("copy C:\TESTS\$($input.BaseName).INI C:\SRC\ACCOUNTS.DAT >nul")
+        $caseLines.Add("if exist C:\SRC\AUDIT.LOG del C:\SRC\AUDIT.LOG")
+    }
     $appCommand = "C:\TOOLS\$executableName.EXE"
     if ($argumentText.Length -gt 0) {
         $appCommand += ' ' + $argumentText
@@ -86,6 +97,12 @@ foreach ($input in $testInputs) {
         $caseLines.Add("goto ${label}_DONE")
     }
     $caseLines.Add(":${label}_DONE")
+    if ($hasDataExpectation) {
+        $caseLines.Add("if exist C:\SRC\ACCOUNTS.DAT copy C:\SRC\ACCOUNTS.DAT C:\TOOLS\$($input.BaseName).ACT >nul")
+    }
+    if ($hasAuditExpectation) {
+        $caseLines.Add("if exist C:\SRC\AUDIT.LOG copy C:\SRC\AUDIT.LOG C:\TOOLS\$($input.BaseName).ALC >nul")
+    }
 }
 [IO.File]::WriteAllLines($caseScriptPath, $caseLines, [Text.Encoding]::ASCII)
 
@@ -129,7 +146,7 @@ foreach ($required in @('PUSH immediate', 'IMUL immediate', 'SHL immediate count
 Write-Output 'PASS: LINT8086.PS1 flags the throwaway forbidden-instruction cases.'
 
 foreach ($input in $testInputs) {
-    foreach ($extension in @('.OUT', '.ERR')) {
+    foreach ($extension in @('.OUT', '.ERR', '.ACT', '.ALC')) {
         Remove-Item (Join-Path $root ("TOOLS\" + $input.BaseName + $extension)) `
             -Force -ErrorAction SilentlyContinue
     }
@@ -149,8 +166,9 @@ $process = Start-Process -FilePath $dosbox `
 
 Write-Output "DOSBox arguments: $arguments"
 $timedOut = $false
+$timeoutSeconds = 60
 try {
-    Wait-Process -Id $process.Id -Timeout 30 -ErrorAction Stop
+    Wait-Process -Id $process.Id -Timeout $timeoutSeconds -ErrorAction Stop
 }
 catch {
     $timedOut = $true
@@ -161,7 +179,7 @@ if ($timedOut) {
     if (-not $process.HasExited) {
         $process.Kill()
         $process.WaitForExit()
-        throw "DOSBox exceeded the 30-second timeout and was terminated (PID $($process.Id))."
+        throw "DOSBox exceeded the $timeoutSeconds-second timeout and was terminated (PID $($process.Id))."
     }
 }
 
@@ -198,6 +216,34 @@ foreach ($input in $testInputs) {
     $expected = [IO.File]::ReadAllBytes($expectedPath)
     if (-not [Linq.Enumerable]::SequenceEqual([byte[]]$actual, [byte[]]$expected)) {
         throw "Output mismatch: $actualPath differs from $expectedPath."
+    }
+    $expectedDataPath = Join-Path $input.DirectoryName ($input.BaseName + '.DAT')
+    if (Test-Path $expectedDataPath) {
+        $actualDataPath = Join-Path $root ("TOOLS\" + $input.BaseName + '.ACT')
+        if (-not (Test-Path $actualDataPath)) {
+            throw "Expected data image was not created for $($input.Name): $actualDataPath."
+        }
+        $actualData = [IO.File]::ReadAllBytes($actualDataPath)
+        $expectedData = [IO.File]::ReadAllBytes($expectedDataPath)
+        if (-not [Linq.Enumerable]::SequenceEqual([byte[]]$actualData, [byte[]]$expectedData)) {
+            throw "Data image mismatch: $actualDataPath differs from $expectedDataPath."
+        }
+        Write-Output "PASS: $actualDataPath matches $expectedDataPath byte-for-byte."
+        Remove-Item $actualDataPath -Force
+    }
+    $expectedAuditPath = Join-Path $input.DirectoryName ($input.BaseName + '.LOG')
+    if (Test-Path $expectedAuditPath) {
+        $actualAuditPath = Join-Path $root ("TOOLS\" + $input.BaseName + '.ALC')
+        if (-not (Test-Path $actualAuditPath)) {
+            throw "Expected audit log was not created for $($input.Name): $actualAuditPath."
+        }
+        $actualAudit = [IO.File]::ReadAllBytes($actualAuditPath)
+        $expectedAudit = [IO.File]::ReadAllBytes($expectedAuditPath)
+        if (-not [Linq.Enumerable]::SequenceEqual([byte[]]$actualAudit, [byte[]]$expectedAudit)) {
+            throw "Audit log mismatch: $actualAuditPath differs from $expectedAuditPath."
+        }
+        Write-Output "PASS: $actualAuditPath matches $expectedAuditPath byte-for-byte."
+        Remove-Item $actualAuditPath -Force
     }
     $exitCode = [IO.File]::ReadAllText($errorPath).Trim()
     if ($exitCode -eq '5+') {

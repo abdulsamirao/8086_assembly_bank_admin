@@ -10,7 +10,7 @@ The VS Code MASM/TASM extension bundles TASM 4.1 and TLINK 7.1 in `resources\TAS
 
 `TOOLS\HEADLESS.CONF` provides DOSBox's `[autoexec]` commands: disable command echo, mount the project as `C:`, select that drive, call `TOOLS\RUNTEST.BAT`, and exit. Launch DOSBox Staging from the project root with `-conf TOOLS\HEADLESS.CONF`; the configuration file avoids quoting problems with repeated `-c` arguments.
 
-Run the workflow from the project root with `powershell -NoProfile -ExecutionPolicy Bypass -File TOOLS\RUNHOST.PS1`. The host runner starts DOSBox with the single argument `-conf TOOLS\HEADLESS.CONF`, waits up to 30 seconds, and terminates it if it hangs. It discovers tests by enumerating `TESTS\*.IN`; every input must have a same-stem `.EXP` file. An optional same-stem `.PGM` file names the executable basename, such as `TDRV`; without it, the runner preserves the existing same-stem tool-executable fallback and then uses `BANK.EXE`. An optional `.RC` file specifies the expected DOS exit code (0 through 4); the runner compares it with the captured code. It also compares each produced `.OUT` byte-for-byte with its `.EXP`. Complete DOSBox stdout/stderr is printed from `HEADLESS.OUT` and `HEADLESS.LOG`.
+Run the workflow from the project root with `powershell -NoProfile -ExecutionPolicy Bypass -File TOOLS\RUNHOST.PS1`. The host runner starts DOSBox with the single argument `-conf TOOLS\HEADLESS.CONF`, runs test inputs in sorted filename order, waits up to 60 seconds, and terminates it if it hangs. It discovers tests by enumerating `TESTS\*.IN`; every input must have a same-stem `.EXP` file. An optional same-stem `.PGM` file names the executable basename, such as `TDRV`; without it, the runner preserves the existing same-stem tool-executable fallback and then uses `BANK.EXE`. An optional `.RC` file specifies the expected DOS exit code (0 through 4); the runner compares it with the captured code. An optional `.INI` file supplies the exact initial `ACCOUNTS.DAT` bytes for that case and clears the prior `AUDIT.LOG`. An optional `.DAT` file asks the runner to snapshot and byte-compare the generated `ACCOUNTS.DAT` immediately after that case. An optional `.LOG` file similarly checks the generated audit log. It also compares each produced `.OUT` byte-for-byte with its `.EXP`. Complete DOSBox stdout/stderr is printed from `HEADLESS.OUT` and `HEADLESS.LOG`.
 
 `TOOLS\BUILD.BAT` assembles and links the Stage 0 tools and `SRC\BANK.ASM` and `SRC\TDRV.ASM` with the extension's TASM/TLINK. Both application sources include `IO.INC` from the same source directory; the headless build assembles them from `C:\SRC`. BANK is the product shell, while TDRV owns the I/O regression dispatcher. `TOOLS\RUNHOST.PS1` discovers each test input and creates a temporary `RUNCASES.BAT`; the generated commands run the selected executable with stdin/stdout redirection and record its DOS errorlevel. `TOOLS\RUNTEST.BAT` writes the `START`/`END` markers to `TOOLS\STAGE0.LOG`.
 
@@ -39,7 +39,7 @@ Stage 1 established the shared I/O and command-tail routines in `IO.INC`. After 
 
 ### Procedure walk-through
 
-- BANK `MAIN` obtains the PSP segment with DOS function 62h before changing `DS`, saves it in `PSP_SEGMENT`, sets `DS`/`ES` to the program data segment, then calls `PARSE_COMMAND`. `/T`, `/I`, and `/B` still reach the Stage 2 product-shell responses; unsupported switches, including retired `/U`, print `Unknown switch` and return code 1. `AX`, `BX`, `SI`, `DS`, and `ES` matter during PSP setup; it exits through function 4Ch.
+- BANK `MAIN` obtains the PSP segment with DOS function 62h before changing `DS`, saves it in `PSP_SEGMENT`, sets `DS`/`ES` to the program data segment, then calls `PARSE_COMMAND`. `/I` now calls `DATA_INIT`; a no-switch launch calls `DATA_LOAD` and reports missing or corrupt data with exit code 3. `/T` and `/B` remain product-shell responses until their later stages; unsupported switches, including retired `/U`, print `Unknown switch` and return code 1. `AX`, `BX`, `SI`, `DS`, and `ES` matter during PSP setup; it exits through function 4Ch.
 - TDRV `MAIN` performs the same PSP and segment setup, calls `PARSE_COMMAND`, then reads the test selector with `NEXT_TOKEN`. It copies that selector into `TEST_OPERATION` using forward `REP MOVSB`, dispatches through `RUN_IO_TEST`, and exits with `NUMBER_STATUS`. A missing selector remains an unknown-test case. `AX`, `BX`, `CX`, `SI`, `DI`, `DS`, and `ES` matter; the copy relies on `CLD` and temporarily setting `ES=DS`.
 - `RUN_IO_TEST` compares `TEST_OPERATION` against the NUL-terminated selector constants with `TOKEN_EQUALS`, then calls the associated I/O routine or prints `UNKNOWN TEST`. Its selector comparisons use `SI`, `DI`, `CX` and the comparison result in ZF; input-test status is returned through `NUMBER_STATUS`. For example, `/T DECIMAL 305` leaves `DECIMAL` as the selector, consumes `305` as the next token, converts it to AX, prints `305`, and records status 0. This routine is test-only and is not assembled into BANK.
 - `PRINT_STRING` sends the `$`-terminated string at `DS:DX` through function 09h. `DX` is the pointer and `AX` selects the DOS call; it destroys `AX`.
@@ -102,3 +102,105 @@ The final bytes are `[00h, 00h, 01h, 00h, 00h, 00h]`, which format as `100.00`. 
 `TOOLS\ORACLE.PY` generates `TESTS\T20.IN` and `TESTS\T20.EXP` from independent Python `decimal` arithmetic and the exact FR-11 regular expression. It is run with `python TOOLS\ORACLE.PY`; the expected output is not derived from the assembly program. The 35 vectors cover six-byte carry and borrow, zero arithmetic, equal and ordered comparisons, overflow and underflow status, formatting, parse/format results, and every specified lexical acceptance/rejection example (including leading/trailing spaces, signs, separators, empty input, and the 10-digit integer boundary). Zero is accepted by `bcd_parse`; callers enforce transaction non-zero and 50,000.00 policies.
 
 Stage 3 verification ran `powershell -NoProfile -ExecutionPolicy Bypass -File TOOLS\RUNHOST.PS1`. TASM assembled both programs, the 8086 lint passed, all existing regression cases passed, and `T20.OUT` matched the oracle-generated `T20.EXP` with exit code 0.
+
+## Stage 4 data file format
+
+`ACCOUNTS.DAT` is a compact little-endian binary file. Its six-byte header is the four ASCII bytes `CALD`, version byte `01h`, and one-byte customer count. It is followed by one 16-byte admin record and `count` 16-byte customer records; the final two bytes are a little-endian 16-bit additive checksum of every preceding file byte. The checksum is the unsigned sum modulo 65,536. The maximum file size is 152 bytes.
+
+The admin record contains a four-byte ASCII admin ID, a two-byte PIN hash, and ten reserved zero bytes. Each customer record contains a four-byte ASCII account number, a two-byte PIN hash, six little-endian packed-BCD balance bytes with two implied decimal places, one status byte (`01h` active, `00h` locked), and three reserved zero bytes. This fixed layout leaves no PIN in plaintext. A reader rejects incorrect magic, version, count, exact file size, or checksum. Missing files and corrupt files are reported separately.
+
+The 16-bit PIN hash is intentionally non-cryptographic. Starting at `6D31h`, for each of the four positions it rotates AX left by one, XORs the ASCII ID byte into AL, adds `0137h`, then XORs the ASCII PIN byte into AH. It multiplies the final AX by 251 and keeps the low word. The PIN buffer is overwritten with zeroes after hashing. For `9001` / `1357`, the four intermediate AX values are `EA92h`, `E54Ch`, `FEE0h`, and `C827h`; multiplying `C827h` by 251 leaves `3E3Dh`. This is a deterministic demonstration hash, not a security mechanism.
+
+### Procedures and calling conventions
+
+- `PIN_HASH` takes `DS:SI` to four ASCII ID digits and `DS:DI` to four ASCII PIN digits. It returns the low product word in AX, preserves BX/CX/DX/SI/DI/ES, and zeroes the four PIN bytes using `REP STOSB`; flags are unspecified. The routine expects digit validation from its caller and uses the account ID as the salt.
+- `PIN_VERIFY` takes the same ID and candidate-PIN pointers plus the stored hash in BX. It returns AL=1 for a match and AL=0 otherwise, preserves BX/CX/DX/SI/DI/ES, and inherits the input-clearing behavior from `PIN_HASH`; flags are unspecified.
+- `DATA_COMPUTE_CHECKSUM` reads `DATA_LENGTH` bytes of `DATA_IMAGE` except its final two checksum bytes. It returns the 16-bit sum in DX, preserves AX/CX/SI, and leaves the other flags unspecified.
+- `DATA_SAVE` derives the image length from the one-byte account count, rejects counts above eight, calculates and stores the little-endian checksum, then creates/truncates and writes `ACCOUNTS.DAT`. It returns AL=0 for a complete write and close, or AL=1 for a format or DOS error. It preserves BX/CX/DX/SI/DI.
+- `DATA_LOAD` opens the current-directory `ACCOUNTS.DAT`, checks its physical length, reads the header before calculating the expected full image size, then validates magic, version, count, exact size, and checksum. AL returns 0 for success, 1 for a missing file, 2 for corrupt data, and 3 for another DOS I/O failure; BX/CX/DX/SI/DI/ES are preserved.
+- `DATA_INIT` clears the shared image, writes the fixed admin and three customer records, hashes each seed PIN, calls `DATA_SAVE`, then deletes an existing `AUDIT.LOG` (a missing log is allowed). Saving first avoids discarding the old log if the new account file cannot be written. AL is 0 for success and 1 for a DOS failure; BX/CX/DX/SI/DI/ES are preserved.
+- TDRV `TEST_PIN_HASH` calls `PIN_HASH` with the admin seed and prints its returned word in decimal; it intentionally confirms the PIN input buffer was the only copy and is cleared.
+- TDRV `TEST_PIN_VERIFY` checks that `9001` / `1357` matches the documented hash and that `9001` / `1358` does not; both candidate buffers are cleared.
+- TDRV `TEST_DATA_PERSIST` initializes, reloads, and checks the seed count, admin hash, and first balance, then removes the file. It reports failure through a nonzero TDRV exit code.
+- TDRV `TEST_DATA_CORRUPT` initializes the file, flips one checksum bit on disk, and checks that `DATA_LOAD` returns status 2 before removing it. TDRV `TEST_DATA_MISSING` removes the file, checks for status 1, and prints the same initialization guidance used by BANK.
+
+### Hand trace: seed creation and reload
+
+The initialized count is 3, so `DATA_SAVE` computes `24 + (3 << 4) = 72` bytes (`0048h`). `DATA_LOAD` reads the 6-byte header, derives the same 72-byte size from the count, and reads the remaining 66 bytes. With the specified 1001 balance of 1000.00, the independent sum of the preceding 70 bytes is `0822h`, so the file ends with checksum bytes `22 08`. On load, the checksum routine sums those same 70 bytes into DX; comparing DL=`22h` and DH=`08h` with the stored bytes accepts the image. If the final high checksum byte is changed to `09h`, the second comparison fails and the routine returns AL=2.
+
+Stage 4 verification ran `powershell -NoProfile -ExecutionPolicy Bypass -File TOOLS\RUNHOST.PS1`. TASM built both programs, the 8086 lint passed, and all 32 input/output comparisons passed, including the product `/I` test, hash/verify tests, persistence round-trip, checksum rejection, missing-file handling, and the Stage 3 BCD vectors. `BANK` returned code 3 for the no-switch missing-file case.
+
+### Seed-value verification correction
+
+The original `DATA_INIT` assigned bytes `75 50 02` to customer 1001's balance, which is 250.75, not the required 1000.00. TDRV's `TEST_DATA_PERSIST` asserted those same incorrect bytes, so P04 reported `PERSISTENCE OK` while accepting the wrong seed. P04.EXP only contains that generic status; no existing `.EXP` encodes the wrong numeric balance, and no expected output was copied from the program. The earlier Stage 4 run passed because its persistence check repeated the same mistake and the Stage 3 oracle did not model seed records.
+
+The corrected seed values were independently checked with the documented hash and packed-BCD rules:
+
+| Record | ID | Hash word (file bytes) | Balance bytes, low to high | Status |
+|---|---|---|---|---|
+| Admin | 9001 | `3E3D` (`3D 3E`) | n/a | n/a |
+| Customer | 1001 | `187D` (`7D 18`) | `00 00 10 00 00 00` | active |
+| Customer | 1002 | `546E` (`6E 54`) | `75 50 02 00 00 00` | active |
+| Customer | 1003 | `D973` (`73 D9`) | `00 00 00 00 00 00` | locked |
+
+`TOOLS\ORACLE.PY` now mirrors the written PIN-hash algorithm and derives each packed-BCD balance from `decimal.Decimal`. It generates the 72-byte seed image, including checksum `0822h` (`22 08`), as `TESTS\I05.DAT`. The runner snapshots the product's `/I` output immediately after that test and compares every byte with the oracle file. `TEST_DATA_PERSIST` also checks all four IDs/hashes and all customer balances/statuses.
+
+## Stage 5 login, menu, and account operations
+
+`BANK.ASM` now loads the data image for both normal and `/T` launches, enters `ADMIN_RUN`, and exits with the returned DOS code. `/I` remains the explicit seed operation. `/T` uses the ordinary menu with redirected input; the later timeout and audit features are not part of this stage.
+
+### Procedures and calling conventions
+
+- `ADMIN_RUN` calls the login loop and, only after successful authentication, the menu. It returns AL=0 for normal exit or EOF and AL=2 for lockout; it preserves the other general registers and leaves flags unspecified.
+- `ADMIN_LOGIN` gives every ID the same PIN prompt and failure response. It hashes the candidate PIN with `PIN_HASH` (which clears its four input bytes), compares the four ID bytes and stored hash, and stops after three failures. AL is 0 for success, 1 for EOF, and 2 for lockout; other registers are preserved and flags are unspecified.
+- `ADMIN_READ_ID` prints the prompt in DX, reads one line, and accepts exactly four ASCII digits. It returns AL=0/1/2 for valid/EOF/malformed input and stores a four-byte placeholder on invalid input. BX, CX, DX, SI, DI, BP, DS, and ES are preserved; flags are unspecified.
+- `ADMIN_CLEAR_PIN` uses `REP STOSB` to clear all four shared PIN bytes, including partial or rejected input. It preserves every register; flags are unspecified.
+- `ADMIN_MENU` prints all nine specified choices and dispatches list, view, create, lock/unlock, PIN reset, balance adjustment, summary, audit-view fallback, and exit. Choice 9 appends EXIT before returning; EOF returns without an EXIT event. It destroys AX, preserves the other registers, and leaves flags unspecified.
+- `ADMIN_LIST` prints the fixed header and walks the validated records. It calls `ADMIN_PRINT_RECORD` per row and preserves all registers; flags are unspecified.
+- `ADMIN_LOOKUP` scans the customer table with `REPE CMPSB`, resetting the query pointer for each four-byte ID. AX returns the record offset or zero; all other registers are preserved, and flags are unspecified.
+- `ADMIN_PRINT_RECORD` prints the four-character ID, status, and a balance formatted by `bcd_format`. SI is the record pointer; the procedure preserves all registers and leaves flags unspecified.
+- `ADMIN_VIEW` validates the requested account number, calls `ADMIN_LOOKUP`, and prints its row or `Account not found` for unknown or malformed input. It destroys AX, preserves the other registers, and leaves flags unspecified.
+- `ADMIN_CREATE` rejects malformed and duplicate IDs and a full table, reads a masked PIN and opening amount, parses the amount with `bcd_parse`, and rejects values above 50,000.00. It creates a zero-initialized 16-byte record, hashes and clears the PIN, saves the data image, and appends a CREATE event only after the save succeeds; it destroys AX, preserves the other registers, and leaves flags unspecified.
+
+### Hand trace: finding account 1002
+
+The validated table begins at offset 22 and each record is 16 bytes. The first record's ID is `1001`, so `REPE CMPSB` matches the first three bytes of query `1002`, then stops at `1` versus `2`. DI has advanced four bytes; adding 12 skips the remainder of that record and reaches offset 38. The second comparison matches all four bytes and leaves DI at offset 42. Subtracting four returns record offset 38 in AX. SI, DI, CX, and ZF matter during the comparison; the lookup's return flags are unspecified because it computes the returned offset afterward.
+
+Stage 5 tests T01-T07 exercise successful login/exit, three-failure lockout, unknown IDs, exact listing, existing/unknown/malformed lookup, account creation and view, malformed/duplicate IDs, invalid opening balance, and table-full rejection. T00 reinitializes the seed after earlier persistence tests so the Stage 5 cases begin from known data.
+
+Stage 5 supplied the authentication and read/create foundations. Stage 6 completes failed-login auditing and connects the remaining menu operations to persistence and audit append.
+
+## Stage 6 write operations, report, and audit
+
+`ADMIN_MENU` now calls `ADMIN_LOCK`, `ADMIN_RESET_PIN`, `ADMIN_ADJUST`, and `ADMIN_REPORT` for menu choices 4-7. Choice 8 prints `Audit log: see AUDIT.LOG`, the allowed FR-19 fallback. The account status byte is `01h` when active and `00h` when locked; lock and unlock both save immediately. Reset-PIN hashes and clears the entered PIN before saving. A failed save restores the changed status, hash, or balance in memory and reports the failure.
+
+### New procedure explanations
+
+- `ADMIN_SET_AUDIT_ACCOUNT` takes `DS:SI` pointing to four account digits, copies them into `AUDIT_ACCOUNT`, and adds its `$` terminator. It preserves all registers and leaves flags unspecified. `REP MOVSB` is used because the field is a fixed four bytes.
+- `ADMIN_LOCK` reads and looks up an account, toggles its status, persists the image, and emits LOCK or UNLOCK only after a successful save. It preserves BX/CX/DX/SI/DI/BP/DS/ES and destroys AX; flags are unspecified. It uses `[BX+12]`, the status byte in the record, so memory and disk use the same value.
+- `ADMIN_RESET_PIN` reads an account and masked PIN, hashes the PIN against that account ID, and persists the new word at record offset 4. It restores the previous hash on save failure. It preserves BX/CX/DX/SI/DI/BP/DS/ES and destroys AX; flags are unspecified. `PIN_HASH` clears the input buffer as part of hashing.
+- `ADMIN_ADJUST` validates account, C/D operation, amount grammar, nonzero amount, and the 50,000.00 transaction cap. It snapshots the six balance bytes, uses `bcd_add` or `bcd_sub`, and restores the snapshot on overflow, underflow, or save failure. It preserves BX/CX/DX/SI/DI/BP/DS/ES and destroys AX; flags are unspecified. CF from the BCD routine decides whether the trial balance is representable and nonnegative.
+- `ADMIN_REPORT` counts statuses and accumulates balances in a seven-byte packed-BCD total, then writes the required four output lines and a REPORT audit event. The seventh byte captures carries when up to eight six-byte balances are summed. It preserves BX/CX/DX/SI/DI/BP/DS/ES and destroys AX; flags are unspecified.
+- `ADMIN_FORMAT_TOTAL` converts the seven-byte little-endian total into a `$`-terminated amount with suppressed integer zeroes and exactly two fractional digits. It preserves all general registers and leaves flags unspecified. It scans integer nibbles from most to least significant and always emits the final two fractional nibbles.
+- `AUDIT_WRITE` builds `YYYY-MM-DD HH:MM:SS admin-id ACTION acct detail` plus CR/LF, opens or creates `AUDIT.LOG`, seeks to its end, writes the complete line, and closes the handle. Under `/T` it uses `2000-01-01 00:00:00`; otherwise it reads DOS date/time. It returns AL=0/1 and prints an explicit error on failure; BX/CX/DX/SI/DI/BP/DS/ES are preserved and flags are unspecified.
+- `AUDIT_COPY_DOLLAR` copies bytes before `$` from `DS:SI` to `ES:DI`, leaving both pointers at their terminators. It preserves other registers, changes SI/DI as documented, and preserves flags with PUSHF/POPF. `LODSB`/`STOSB` fit the sequential string copy.
+- `AUDIT_WRITE_TWO` takes AL from 0 through 99, writes two ASCII digits at `ES:DI`, and advances DI by two. It preserves BX/CX/DX/SI/BP/DS/ES; AX and DI are outputs, and flags are unspecified. Byte DIV by 10 supplies quotient and remainder without a lookup table.
+- `AUDIT_WRITE_YEAR` takes the year in AX, emits four digits at `ES:DI`, and advances DI by four. It preserves BX/CX/DX/SI/BP/DS/ES; AX and DI are outputs, and flags are unspecified. Four DIV remainders are pushed and popped in reverse order to print most-significant digit first.
+
+### Hand trace: credit carry and summary total
+
+For the Stage 6 carry case, `99999.99` is stored low byte first as `99 99 99 09 00 00`; `0.01` is `01 00 00 00 00 00`. `ADMIN_ADJUST` copies the original balance before calling `bcd_add`.
+
+| Byte | ADC inputs | Before DAA | After DAA | CF |
+|---|---|---:|---:|---:|
+| 0 | `99h + 01h + 0` | `9Ah` | `00h` | 1 |
+| 1 | `99h + 00h + 1` | `9Ah` | `00h` | 1 |
+| 2 | `99h + 00h + 1` | `9Ah` | `00h` | 1 |
+| 3 | `09h + 00h + 1` | `0Ah` | `10h` | 0 |
+| 4-5 | `00h + 00h + 0` | `00h` | `00h` | 0 |
+
+The result bytes are `00 00 00 10 00 00`, which `bcd_format` displays as `100000.00`. If the carry left byte 5, `ADMIN_ADJUST` would restore its six-byte snapshot and reject the credit. `ADMIN_REPORT` also keeps carry out of byte 5 by incrementing its seventh BCD byte; with eight accounts, that high byte can only rise to `07h`.
+
+### Stage 6 tests
+
+`TOOLS\OR6.PY` creates the `Z08A`-`Z18` cases from independent account/hash/BCD models, without rewriting the existing T09 hash regression or any earlier `.IN`/`.EXP`. The pair `Z08A`/`Z08B` checks that lock state survives separate DOS process runs. Other cases check PIN-hash persistence, account creation, credit/debit persistence, exact-balance debit, zero and overdraw rejection, a carry across BCD bytes, maximum-balance overflow rejection, ordinary and wide summary totals, the audit-view fallback, fixed audit timestamps, and failed-login records. `.INI` fixture images reset the starting table for each independent case; `.DAT` and `.LOG` snapshots compare persisted bytes and audit lines.

@@ -1,0 +1,119 @@
+Admin ID: 9001
+Admin PIN: ****
+Login successful
+1 List accounts
+2 View account
+3 Create account
+4 Lock/Unlock
+5 Reset customer PIN
+6 Adjust balance
+7 Summary report
+8 Audit log
+9 Exit
+Choice: 3
+Account number: 12x4
+Invalid account number
+1 List accounts
+2 View account
+3 Create account
+4 Lock/Unlock
+5 Reset customer PIN
+6 Adjust balance
+7 Summary report
+8 Audit log
+9 Exit
+Choice: 3
+Account number: 1001
+Account already exists
+1 List accounts
+2 View account
+3 Create account
+4 Lock/Unlock
+5 Reset customer PIN
+6 Adjust balance
+7 Summary report
+8 Audit log
+9 Exit
+Choice: 3
+Account number: 1005
+Customer PIN: ****
+Opening balance: 50000.01
+Invalid amount
+1 List accounts
+2 View account
+3 Create account
+4 Lock/Unlock
+5 Reset customer PIN
+6 Adjust balance
+7 Summary report
+8 Audit log
+9 Exit
+Choice: 3
+Account number: 1005
+Customer PIN: ****
+Opening balance: 0
+Account created
+1 List accounts
+2 View account
+3 Create account
+4 Lock/Unlock
+5 Reset customer PIN
+6 Adjust balance
+7 Summary report
+8 Audit log
+9 Exit
+Choice: 3
+Account number: 1006
+Customer PIN: ****
+Opening balance: 0
+Account created
+1 List accounts
+2 View account
+3 Create account
+4 Lock/Unlock
+5 Reset customer PIN
+6 Adjust balance
+7 Summary report
+8 Audit log
+9 Exit
+Choice: 3
+Account number: 1007
+Customer PIN: ****
+Opening balance: 0
+Account created
+1 List accounts
+2 View account
+3 Create account
+4 Lock/Unlock
+5 Reset customer PIN
+6 Adjust balance
+7 Summary report
+8 Audit log
+9 Exit
+Choice: 3
+Account number: 1008
+Customer PIN: ****
+Opening balance: 0
+Account created
+1 List accounts
+2 View account
+3 Create account
+4 Lock/Unlock
+5 Reset customer PIN
+6 Adjust balance
+7 Summary report
+8 Audit log
+9 Exit
+Choice: 3
+Account number: 1009
+Account table full
+1 List accounts
+2 View account
+3 Create account
+4 Lock/Unlock
+5 Reset customer PIN
+6 Adjust balance
+7 Summary report
+8 Audit log
+9 Exit
+Choice: 9

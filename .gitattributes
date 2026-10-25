@@ -5,3 +5,6 @@
 *.ARG text eol=crlf
 *.PGM text eol=crlf
 *.RC text eol=crlf
+*.DAT binary
+*.INI binary
+*.LOG text eol=crlf
