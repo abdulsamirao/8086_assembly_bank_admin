@@ -3,3 +3,5 @@
 *.IN text eol=crlf
 *.EXP text eol=crlf
 *.ARG text eol=crlf
+*.PGM text eol=crlf
+*.RC text eol=crlf

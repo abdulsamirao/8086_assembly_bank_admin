@@ -37,9 +37,31 @@ foreach ($input in $testInputs) {
     if (Test-Path $argumentPath) {
         $argumentText = [IO.File]::ReadAllText($argumentPath).TrimEnd([char[]]"`r`n")
     }
-    $executableName = $input.BaseName
-    if (-not (Test-Path (Join-Path $root ("TOOLS\" + $executableName + '.ASM')))) {
-        $executableName = 'BANK'
+    $programPath = Join-Path $input.DirectoryName ($input.BaseName + '.PGM')
+    if (Test-Path $programPath) {
+        $executableName = [IO.File]::ReadAllText($programPath).Trim()
+        if ($executableName -notmatch '^[A-Za-z0-9_]{1,8}$') {
+            throw "Program name must use an 8.3-compatible stem: $programPath."
+        }
+        $sourcePath = Join-Path $root ("SRC\" + $executableName + '.ASM')
+        $toolSourcePath = Join-Path $root ("TOOLS\" + $executableName + '.ASM')
+        if (-not (Test-Path $sourcePath) -and -not (Test-Path $toolSourcePath)) {
+            throw "No assembly source found for program '$executableName' in $programPath."
+        }
+    }
+    else {
+        $executableName = $input.BaseName
+        if (-not (Test-Path (Join-Path $root ("TOOLS\" + $executableName + '.ASM')))) {
+            $executableName = 'BANK'
+        }
+    }
+    $returnCodePath = Join-Path $input.DirectoryName ($input.BaseName + '.RC')
+    if (Test-Path $returnCodePath) {
+        $expectedReturnCode = [IO.File]::ReadAllText($returnCodePath).Trim()
+        if ($expectedReturnCode -notmatch '^\d+$' -or
+            [int]$expectedReturnCode -gt 4) {
+            throw "Expected return code must be between 0 and 4: $returnCodePath."
+        }
     }
     $label = 'CASE_' + $input.BaseName.ToUpperInvariant()
     $appCommand = "C:\TOOLS\$executableName.EXE"
@@ -48,16 +70,21 @@ foreach ($input in $testInputs) {
     }
     $appCommand += " < C:\TESTS\$($input.BaseName).IN > C:\TOOLS\$($input.BaseName).OUT"
     $caseLines.Add($appCommand)
+    $caseLines.Add("if errorlevel 5 goto ${label}_HIGH")
+    $caseLines.Add("if errorlevel 4 goto ${label}_4")
+    $caseLines.Add("if errorlevel 3 goto ${label}_3")
     $caseLines.Add("if errorlevel 2 goto ${label}_2")
     $caseLines.Add("if errorlevel 1 goto ${label}_1")
     $caseLines.Add("echo 0 > C:\TOOLS\$($input.BaseName).ERR")
     $caseLines.Add("goto ${label}_DONE")
-    $caseLines.Add(":${label}_2")
-    $caseLines.Add("echo 2 > C:\TOOLS\$($input.BaseName).ERR")
+    $caseLines.Add(":${label}_HIGH")
+    $caseLines.Add("echo 5+ > C:\TOOLS\$($input.BaseName).ERR")
     $caseLines.Add("goto ${label}_DONE")
-    $caseLines.Add(":${label}_1")
-    $caseLines.Add("echo 1 > C:\TOOLS\$($input.BaseName).ERR")
-    $caseLines.Add("goto ${label}_DONE")
+    foreach ($returnCode in 4..1) {
+        $caseLines.Add(":${label}_$returnCode")
+        $caseLines.Add("echo $returnCode > C:\TOOLS\$($input.BaseName).ERR")
+        $caseLines.Add("goto ${label}_DONE")
+    }
     $caseLines.Add(":${label}_DONE")
 }
 [IO.File]::WriteAllLines($caseScriptPath, $caseLines, [Text.Encoding]::ASCII)
@@ -173,8 +200,18 @@ foreach ($input in $testInputs) {
         throw "Output mismatch: $actualPath differs from $expectedPath."
     }
     $exitCode = [IO.File]::ReadAllText($errorPath).Trim()
+    if ($exitCode -eq '5+') {
+        throw "DOS exit code for $($input.Name) is 5 or higher; the runner captures exact codes 0 through 4."
+    }
     if ($exitCode -notmatch '^\d+$') {
         throw "Invalid captured exit code for $($input.Name): '$exitCode'."
+    }
+    $returnCodePath = Join-Path $input.DirectoryName ($input.BaseName + '.RC')
+    if (Test-Path $returnCodePath) {
+        $expectedReturnCode = [IO.File]::ReadAllText($returnCodePath).Trim()
+        if ($exitCode -ne $expectedReturnCode) {
+            throw "Exit-code mismatch for $($input.Name): expected $expectedReturnCode, got $exitCode."
+        }
     }
     $exitCodes[$input.BaseName] = $exitCode
     Write-Output "PASS: $actualPath matches $expectedPath; exit code $exitCode captured."
@@ -240,8 +277,8 @@ if ($exitCodes['READKEY'] -ne '0') {
 }
 $expectedSwitchExitCodes = @{
     'SW03' = '1'
-    'SW06' = '0'
-    'SW07' = '0'
+    'SW06' = '1'
+    'SW07' = '1'
 }
 foreach ($name in $expectedSwitchExitCodes.Keys) {
     if ($exitCodes[$name] -ne $expectedSwitchExitCodes[$name]) {

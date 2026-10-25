@@ -51,7 +51,7 @@ FR-10 [MUST] Adjust balance: ask for an account number, C (credit) or D (debit),
 Credit: add with ADC+DAA; reject if the result would exceed 9,999,999,999.99 (carry out of the top byte).
 Debit: subtract with SBB+DAS; reject if it would overdraw (borrow out of the top byte); the balance is unchanged on any rejection.
 Locked accounts can still be adjusted (admins may correct them), and the audit entry records the amount.
-FR-11 [MUST] Amounts are typed as decimal text with 0-2 decimals (125, 125.5, 125.50). Reject empty, non-numeric, more than 2 decimals, zero, negative, and anything above 50,000.00. Opening balances use the same rules (zero is allowed for an opening balance).
+FR-11 [MUST] Amounts are typed as digits, optionally followed by a decimal point and one or two digits (125, 125.5, 125.50). Input must match ^[0-9]{1,10}(\.[0-9]{1,2})?$; a trailing point (125.), a leading point (.5), signs, spaces, separators, and more than 10 integer digits are rejected. The parser accepts zero; the 50,000.00 limit and the non-zero rule are enforced by the callers. Reject empty, non-numeric, more than 2 decimals, zero, negative, and anything above 50,000.00. Opening balances use the same rules (zero is allowed for an opening balance).
 FR-12 [MUST] Summary report, in this exact format:
   ACCOUNTS: 3
   ACTIVE: 2
