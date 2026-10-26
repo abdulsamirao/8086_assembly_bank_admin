@@ -1,0 +1,51 @@
+Admin ID: 9001
+Admin PIN: ****
+Login successful
+1 List accounts
+2 View account
+3 Create account
+4 Lock/Unlock
+5 Reset customer PIN
+6 Adjust balance
+7 Summary report
+8 Audit log
+9 Exit
+Choice: 3
+Account number: 1004
+Customer PIN: ****
+Opening balance: 12.34
+Account created
+1 List accounts
+2 View account
+3 Create account
+4 Lock/Unlock
+5 Reset customer PIN
+6 Adjust balance
+7 Summary report
+8 Audit log
+9 Exit
+Choice: 4
+Account number: 1004
+Account locked
+1 List accounts
+2 View account
+3 Create account
+4 Lock/Unlock
+5 Reset customer PIN
+6 Adjust balance
+7 Summary report
+8 Audit log
+9 Exit
+Choice: 2
+Account number: 1004
+1004  LOCKED  12.34
+1 List accounts
+2 View account
+3 Create account
+4 Lock/Unlock
+5 Reset customer PIN
+6 Adjust balance
+7 Summary report
+8 Audit log
+9 Exit
+Choice: 9

@@ -152,6 +152,7 @@ FR-3 requires each failed login to be appended to AUDIT.LOG. The stage plan assi
 - Changed `DOCS\DESIGN.md` with each new procedure's calling behavior, the audit layout, a BCD carry trace, and the test-fixture workflow.
 - Changed `DOCS\ISA_FEATURES.md` to record the Stage 6 instructions, addressing forms, DOS date/time, and file operations.
 - Created `TOOLS\OR6.PY` and Stage 6 fixtures `TESTS\Z08A` through `Z18` (`.IN`, `.EXP`, `.ARG`, `.PGM`, `.RC`, plus `.INI`, `.DAT`, and `.LOG` where applicable).
+- Added `TESTS\Z19` to reproduce creating and locking a non-seed account in one session; its view and persisted status are checked.
 - Preserved the existing T09 hash test and all earlier `.IN` and `.EXP` files; the reset-PIN case is `Z09`.
 - Appended this section to `DOCS\STAGE_REPORT.md`.
 

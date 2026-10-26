@@ -275,6 +275,12 @@ def main():
         "Z17",
         [("3", "1004", "2580", "12.34"), ("2", "1004")],
     )
+    write_case(
+        "Z19",
+        [("3", "1004", "2580", "12.34"),
+         ("4", "1004"),
+         ("2", "1004")],
+    )
     wide_total = fixture_accounts("9999999999.99")
     wide_total[1]["balance"] = Decimal("9999999999.99")
     write_case("Z18", [("7",)], accounts=wide_total)
