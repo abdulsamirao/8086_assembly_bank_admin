@@ -33,12 +33,12 @@ MSG_DATA_IO     DB 'Unable to read data file', 0Dh, 0Ah, '$'
 
 .code
 ; Purpose: Save the DOS PSP segment, establish the data segments, then parse
-;          product command switches.
-; Inputs: DOS command tail at the PSP offset 80h.
+;          product command switches after saving the original timer vector.
+; Inputs: DOS command tail at the PSP offset 80h and current INT 1Ch vector.
 ; Outputs: Prints the product-shell response and exits DOS.
 ; Registers: Destroys AX, BX, CX, DX, SI, DI, ES; preserves none.
 ; Flags: Unspecified on return to DOS.
-; ISA: INT 21h/AH=62h, segment initialization, and INCLUDEd procedures.
+; ISA: INT 21h/AH=62h, segment initialization, near CALL, and INCLUDEd procedures.
 MAIN PROC
     MOV AH, 62h
     INT 21h
@@ -49,6 +49,7 @@ MAIN PROC
     MOV ES, AX
     MOV PSP_SEGMENT, SI
     CLD
+    CALL ISR_SAVE_VECTOR
 
     CALL PARSE_COMMAND
     CMP PARSE_STATUS, 0
@@ -138,5 +139,6 @@ INCLUDE IO.INC
 INCLUDE DATA.INC
 INCLUDE BCD.INC
 INCLUDE ADMIN.INC
+INCLUDE ISR.INC
 
 END MAIN

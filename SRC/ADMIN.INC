@@ -45,6 +45,7 @@ AUDIT_ACTION_CREDIT     DB 'CREDIT$'
 AUDIT_ACTION_DEBIT      DB 'DEBIT$'
 AUDIT_ACTION_REPORT     DB 'REPORT$'
 AUDIT_ACTION_EXIT       DB 'EXIT$'
+AUDIT_ACTION_TIMEOUT    DB 'TIMEOUT$'
 ADMIN_STATUS_ACTIVE   DB 'ACTIVE$'
 ADMIN_STATUS_LOCKED   DB 'LOCKED$'
 ADMIN_TWO_SPACES      DB '  $'
@@ -91,15 +92,16 @@ MSG_REPORT_TOTAL      DB 'TOTAL: $'
 MSG_AUDIT_HELP        DB 'Audit log: see AUDIT.LOG', 0Dh, 0Ah, '$'
 MSG_AUDIT_FAILED      DB 'Unable to write audit log', 0Dh, 0Ah, '$'
 MSG_DATA_SAVE_FAILED  DB 'Unable to save data', 0Dh, 0Ah, '$'
+MSG_SESSION_TIMEOUT   DB 'Session timed out', 0Dh, 0Ah, '$'
 
 .code
 
 ; Purpose: Authenticate an administrator, then run the account menu.
 ; Inputs: Validated data image in DATA_IMAGE.
-; Outputs: AL=0 on normal exit or EOF; AL=2 after three failed logins.
+; Outputs: AL=0 on normal exit or EOF, AL=2 on lockout, AL=4 on timeout.
 ; Registers: Preserves BX, CX, DX, SI, DI, BP, DS, and ES; destroys AX.
 ; Flags: Unspecified.
-; ISA: Near CALL/RET and conditional branches.
+; ISA: CMP, direct addressing, near CALL/RET, and conditional branches.
 ADMIN_RUN PROC NEAR
     PUSH BX
     PUSH CX
@@ -115,8 +117,22 @@ ADMIN_RUN PROC NEAR
     MOV AL, 2
     JMP ADMIN_RUN_RETURN
 ADMIN_RUN_MENU:
+    CMP SWITCH_KIND, 'T'
+    JE ADMIN_RUN_MENU_START
+    CALL ISR_INSTALL
+ADMIN_RUN_MENU_START:
     CALL ADMIN_MENU
+    CMP AL, 4
+    JE ADMIN_RUN_TIMEOUT
+    CALL ISR_RESTORE
     XOR AL, AL
+    JMP ADMIN_RUN_RETURN
+ADMIN_RUN_TIMEOUT:
+    CALL ADMIN_TIMEOUT
+    CALL ISR_RESTORE
+    MOV DX, OFFSET MSG_SESSION_TIMEOUT
+    CALL PRINT_STRING
+    MOV AL, 4
     JMP ADMIN_RUN_RETURN
 ADMIN_RUN_EOF:
     XOR AL, AL
@@ -307,10 +323,10 @@ ADMIN_CLEAR_PIN ENDP
 
 ; Purpose: Print the required menu and dispatch the account operations.
 ; Inputs: None.
-; Outputs: Returns when choice 9 is selected or redirected input reaches EOF.
+; Outputs: AL=0 on exit or EOF; AL=4 when the idle timer expires.
 ; Registers: Preserves BX, CX, DX, SI, DI, BP, DS, and ES.
 ; Flags: Unspecified.
-; ISA: Conditional branches, near CALL/RET, and register-indirect strings.
+; ISA: Direct addressing, conditional branches, and near CALL/RET.
 ADMIN_MENU PROC NEAR
     PUSH BX
     PUSH CX
@@ -321,7 +337,11 @@ ADMIN_MENU PROC NEAR
 ADMIN_MENU_LOOP:
     MOV DX, OFFSET MSG_MENU
     CALL PRINT_STRING
-    CALL READ_LINE
+    CALL ADMIN_READ_MENU
+    CMP AL, 4
+    JNE ADMIN_MENU_NOT_TIMEOUT
+    JMP ADMIN_MENU_TIMEOUT
+ADMIN_MENU_NOT_TIMEOUT:
     CMP AL, 1
     JNE ADMIN_MENU_HAS_INPUT
     JMP ADMIN_MENU_DONE
@@ -387,7 +407,12 @@ ADMIN_MENU_INVALID:
     MOV DX, OFFSET MSG_INVALID_CHOICE
     CALL PRINT_STRING
     JMP ADMIN_MENU_LOOP
+ADMIN_MENU_TIMEOUT:
+    MOV AL, 4
+    JMP ADMIN_MENU_RETURN
 ADMIN_MENU_DONE:
+    XOR AL, AL
+ADMIN_MENU_RETURN:
     POP BP
     POP DI
     POP SI
@@ -396,6 +421,144 @@ ADMIN_MENU_DONE:
     POP BX
     RET
 ADMIN_MENU ENDP
+
+; Purpose: Read menu input with an idle-timeout poll on interactive stdin.
+; Inputs: SWITCH_KIND identifies /T; stdin is checked with DOS IOCTL.
+; Outputs: AL=0 line ready, AL=1 EOF, AL=2 invalid/long line, AL=4 timeout.
+; Registers: Preserves BX, CX, DX, SI, DI, BP, DS, and ES; destroys AX.
+; Flags: Unspecified.
+; ISA: INT 21h/AH=0Bh and AH=08h, based addressing, and CS override.
+ADMIN_READ_MENU PROC NEAR
+    PUSH BX
+    PUSH CX
+    PUSH DX
+    PUSH SI
+    PUSH DI
+    PUSH BP
+    CMP SWITCH_KIND, 'T'
+    JNE ADMIN_READ_MENU_NOT_TEST
+    JMP ADMIN_READ_MENU_BUFFERED
+ADMIN_READ_MENU_NOT_TEST:
+    MOV AX, 4400h
+    XOR BX, BX
+    INT 21h
+    JNC ADMIN_READ_MENU_IOCTL_OK
+    JMP ADMIN_READ_MENU_BUFFERED
+ADMIN_READ_MENU_IOCTL_OK:
+    TEST DL, 80h
+    JNZ ADMIN_READ_MENU_CONSOLE
+    JMP ADMIN_READ_MENU_BUFFERED
+
+ADMIN_READ_MENU_CONSOLE:
+    MOV LINE_COUNT, 0
+    MOV LINE_TOO_LONG, 0
+    MOV LINE_BUFFER+1, 0
+    MOV LINE_BUFFER+2, '$'
+    MOV CS:ISR_TICKS, 0
+ADMIN_READ_MENU_POLL:
+    MOV AH, 0Bh
+    INT 21h
+    OR AL, AL
+    JNZ ADMIN_READ_MENU_KEY
+    MOV AX, CS:ISR_TICKS
+    CMP AX, ISR_TIMEOUT_TICKS
+    JAE ADMIN_READ_MENU_TIMEOUT
+    JMP ADMIN_READ_MENU_POLL
+ADMIN_READ_MENU_KEY:
+    MOV AH, 08h
+    INT 21h
+    MOV CS:ISR_TICKS, 0
+    CMP AL, 0Dh
+    JE ADMIN_READ_MENU_TERMINATE
+    CMP AL, 08h
+    JNE ADMIN_READ_MENU_STORE
+    CMP LINE_COUNT, 0
+    JE ADMIN_READ_MENU_POLL
+    DEC LINE_COUNT
+    MOV BX, LINE_COUNT
+    MOV BYTE PTR LINE_BUFFER[BX+2], '$'
+    MOV DL, 08h
+    CALL PRINT_CHAR
+    MOV DL, ' '
+    CALL PRINT_CHAR
+    MOV DL, 08h
+    CALL PRINT_CHAR
+    JMP ADMIN_READ_MENU_POLL
+ADMIN_READ_MENU_STORE:
+    MOV BX, LINE_COUNT
+    CMP BX, 79
+    JB ADMIN_READ_MENU_STORE_CHAR
+    MOV LINE_TOO_LONG, 1
+    JMP ADMIN_READ_MENU_ECHO
+ADMIN_READ_MENU_STORE_CHAR:
+    MOV LINE_BUFFER[BX+2], AL
+    INC LINE_COUNT
+ADMIN_READ_MENU_ECHO:
+    MOV DL, AL
+    CALL PRINT_CHAR
+    JMP ADMIN_READ_MENU_POLL
+ADMIN_READ_MENU_TERMINATE:
+    CALL PRINT_NEWLINE
+    MOV BX, LINE_COUNT
+    MOV BYTE PTR LINE_BUFFER[BX+2], '$'
+    MOV AL, BL
+    MOV LINE_BUFFER+1, AL
+    CMP LINE_TOO_LONG, 0
+    JNE ADMIN_READ_MENU_BAD
+    XOR AL, AL
+    JMP ADMIN_READ_MENU_RETURN
+ADMIN_READ_MENU_BUFFERED:
+    CALL READ_LINE
+    JMP ADMIN_READ_MENU_RETURN
+ADMIN_READ_MENU_BAD:
+    MOV AL, 2
+    JMP ADMIN_READ_MENU_RETURN
+ADMIN_READ_MENU_TIMEOUT:
+    MOV AL, 4
+ADMIN_READ_MENU_RETURN:
+    POP BP
+    POP DI
+    POP SI
+    POP DX
+    POP CX
+    POP BX
+    RET
+ADMIN_READ_MENU ENDP
+
+; Purpose: Append the timeout event and save the current account image.
+; Inputs: The authenticated admin ID and current account image are available.
+; Outputs: Writes the timeout event and attempts a data save.
+; Registers: Preserves BX, CX, DX, SI, DI, BP, DS, and ES; destroys AX.
+; Flags: Unspecified.
+; ISA: Near CALL/RET and conditional branches.
+ADMIN_TIMEOUT PROC NEAR
+    PUSH BX
+    PUSH CX
+    PUSH DX
+    PUSH SI
+    PUSH DI
+    PUSH BP
+    MOV AUDIT_ACTION_PTR, OFFSET AUDIT_ACTION_TIMEOUT
+    MOV AUDIT_DETAIL_PTR, OFFSET AUDIT_DETAIL_NONE
+    MOV BYTE PTR AUDIT_ACCOUNT, '-'
+    MOV BYTE PTR AUDIT_ACCOUNT+1, '-'
+    MOV BYTE PTR AUDIT_ACCOUNT+2, '-'
+    MOV BYTE PTR AUDIT_ACCOUNT+3, '-'
+    CALL AUDIT_WRITE
+    CALL DATA_SAVE
+    CMP AL, 0
+    JE ADMIN_TIMEOUT_DONE
+    MOV DX, OFFSET MSG_DATA_SAVE_FAILED
+    CALL PRINT_STRING
+ADMIN_TIMEOUT_DONE:
+    POP BP
+    POP DI
+    POP SI
+    POP DX
+    POP CX
+    POP BX
+    RET
+ADMIN_TIMEOUT ENDP
 
 ; Purpose: Print the account table with formatted packed-BCD balances.
 ; Inputs: DATA_IMAGE contains the validated customer count and records.

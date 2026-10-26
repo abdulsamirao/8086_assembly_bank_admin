@@ -177,3 +177,40 @@ The T09 label conflict was resolved as directed: the existing T09 `/T HASH` regr
 3. **Why is the PIN buffer safe to reuse after reset?** `PIN_HASH` clears its four input bytes with `REP STOSB`.
 4. **How does `/T` make audit tests deterministic?** `AUDIT_WRITE` uses `2000-01-01 00:00:00` instead of DOS clock values.
 5. **Why does the summary use a seventh BCD byte?** Eight valid six-byte balances can carry beyond the six-byte range; the extra byte retains that carry.
+
+## Stage 7: idle timeout and interrupt lifecycle
+
+## 1. Plain-English routine summary
+
+- `ISR_SAVE_VECTOR` saves the original INT 1Ch vector during startup.
+- `ISR_INSTALL` installs the timer handler after successful authentication.
+- `TIMER_ISR` increments a CS-resident tick counter, then chains to the previous handler.
+- `ADMIN_READ_MENU` polls interactive menu input, echoes keys, handles backspace, and resets the idle counter on keypress.
+- `ADMIN_TIMEOUT` writes a TIMEOUT audit event and saves account data.
+- `ISR_RESTORE` restores the original INT 1Ch vector before normal exit or timeout exit.
+
+## 2. Files created or changed
+
+- Changed `SRC\BANK.ASM` to include `ISR.INC`.
+- Changed `SRC\ADMIN.INC` for menu polling and timeout handling.
+- Created `SRC\ISR.INC` for the timer ISR and vector management.
+- Changed `DOCS\DESIGN.md` and `DOCS\ISA_FEATURES.md` with Stage 7 behavior and instruction use.
+- Appended this Stage 7 report.
+
+## 3. Exact RUNHOST.PS1 result
+
+Command: `powershell -NoProfile -ExecutionPolicy Bypass -File TOOLS\RUNHOST.PS1`
+
+Process exit code: `0`. TASM/TLINK built BANK and TDRV; the runner reported `8086 lint passed: 7 ASM/INC sources checked.` and `PASS: LINT8086.PS1 flags the throwaway forbidden-instruction cases.` All 54 `.OUT`/`.EXP` comparisons, 15 `.DAT` binary comparisons, and 13 `.LOG` audit comparisons passed; captured DOS exit codes matched their `.RC` expectations. Final runner line: `Stage 0 headless proof passed.`
+
+## 4. Anything unsure about
+
+The headless suite uses `/T`, so the interactive 30-second timeout and live vector restoration were not exercised. Those remain manual DOSBox/debugger checks. No test expected output or input, and no lint rules, were changed.
+
+## 5. Student questions
+
+1. **Why does the ISR use `CS:` for its counter?** DOS can invoke it with an arbitrary `DS`; the counter is stored in the code segment.
+2. **Why does `TIMER_ISR` call the previous handler before its own `IRET`?** Chaining preserves the prior INT 1Ch behavior, while the final `IRET` returns from this hook.
+3. **How many timer ticks represent the timeout?** 546 ticks, approximately 30 seconds at 18.2 ticks per second.
+4. **What resets the idle counter?** Any key consumed by the interactive menu reader.
+5. **What happens when the threshold is reached?** A TIMEOUT event is appended, account data is saved, the old vector is restored, and the program exits with code 4.
