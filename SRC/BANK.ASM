@@ -20,25 +20,46 @@ NUMBER_VALUE    DW 0
 NUMBER_STATUS   DB 0
 CMD_POSITION    DW 0
 CMD_REMAINING   DW 0
+BENCH_ACCUM     DB 6 DUP(0)
+BENCH_ADDEND    DB 01h, 0, 0, 0, 0, 0
+BENCH_BINARY_LO DW 0
+BENCH_BINARY_HI DW 0
+BENCH_START_TICK DW 0
+BENCH_LOOP_TICKS DW 0
+BENCH_UNROLL_TICKS DW 0
+BENCH_BINARY_TICKS DW 0
+BENCH_ITERATIONS EQU 50000
+BENCH_OUTPUT    DB 128 DUP(0)
+BENCH_OUTPUT_LENGTH DW 0
+BENCH_DIGITS    DB 10 DUP(0)
+BENCH_DIGIT_COUNT DW 0
+BENCH_BINARY_TEXT DB 14 DUP('$')
+BENCH_BINARY_LENGTH DW 0
+BENCH_FILE_NAME DB 'BENCH.OUT', 0
+BENCH_LABEL_LOOP DB 'BCD LOOP (ticks): ', 0
+BENCH_LABEL_UNROLLED DB 'BCD UNROLLED (ticks): ', 0
+BENCH_LABEL_BINARY DB 'BINARY ADD + FORMAT ', 0
+BENCH_LABEL_TICKS DB ' (ticks): ', 0
 
 MSG_USAGE       DB 'Use /T, /I, or /B', 0Dh, 0Ah, '$'
 MSG_UNKNOWN     DB 'Unknown switch', 0Dh, 0Ah, '$'
-MSG_TEST_MODE   DB 'TEST MODE', 0Dh, 0Ah, '$'
 MSG_INIT        DB 'Data initialized', 0Dh, 0Ah, '$'
-MSG_BENCH       DB 'BENCH SWITCH', 0Dh, 0Ah, '$'
+MSG_BENCH_DONE  DB 'Benchmark complete. Results: BENCH.OUT', 0Dh, 0Ah, '$'
+MSG_BENCH_VALUE DB 'Binary total: $'
+MSG_BENCH_FAIL  DB 'Benchmark failed', 0Dh, 0Ah, '$'
 MSG_INIT_FAIL   DB 'Data initialization failed', 0Dh, 0Ah, '$'
 MSG_DATA_MISSING DB 'Run with /I to initialize', 0Dh, 0Ah, '$'
 MSG_DATA_CORRUPT DB 'Data file corrupted', 0Dh, 0Ah, '$'
 MSG_DATA_IO     DB 'Unable to read data file', 0Dh, 0Ah, '$'
 
 .code
-; Purpose: Save the DOS PSP segment, establish the data segments, then parse
-;          product command switches after saving the original timer vector.
+; Purpose: Establish the DOS segments, save the PSP and timer vector, then parse
+;          product command switches.
 ; Inputs: DOS command tail at the PSP offset 80h and current INT 1Ch vector.
 ; Outputs: Prints the product-shell response and exits DOS.
 ; Registers: Destroys AX, BX, CX, DX, SI, DI, ES; preserves none.
 ; Flags: Unspecified on return to DOS.
-; ISA: INT 21h/AH=62h, segment initialization, near CALL, and INCLUDEd procedures.
+; ISA: INT 21h/AH=62h, segment initialization, near CALL, and direct addressing.
 MAIN PROC
     MOV AH, 62h
     INT 21h
@@ -115,8 +136,21 @@ MAIN_INIT_DONE:
     JMP MAIN_EXIT_OK
 
 MAIN_BENCH:
-    MOV DX, OFFSET MSG_BENCH
+    CALL BENCH_RUN
+    CMP AL, 0
+    JE MAIN_BENCH_DONE
+    MOV DX, OFFSET MSG_BENCH_FAIL
     CALL PRINT_STRING
+    MOV AX, 4C01h
+    INT 21h
+MAIN_BENCH_DONE:
+    MOV DX, OFFSET MSG_BENCH_DONE
+    CALL PRINT_STRING
+    MOV DX, OFFSET MSG_BENCH_VALUE
+    CALL PRINT_STRING
+    MOV DX, OFFSET BENCH_BINARY_TEXT
+    CALL PRINT_STRING
+    CALL PRINT_NEWLINE
     JMP MAIN_EXIT_OK
 
 MAIN_PARSE_ERROR:
@@ -140,5 +174,6 @@ INCLUDE DATA.INC
 INCLUDE BCD.INC
 INCLUDE ADMIN.INC
 INCLUDE ISR.INC
+INCLUDE BENCH.INC
 
 END MAIN

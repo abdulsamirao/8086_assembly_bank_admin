@@ -214,3 +214,42 @@ The headless suite uses `/T`, so the interactive 30-second timeout and live vect
 3. **How many timer ticks represent the timeout?** 546 ticks, approximately 30 seconds at 18.2 ticks per second.
 4. **What resets the idle counter?** Any key consumed by the interactive menu reader.
 5. **What happens when the threshold is reached?** A TIMEOUT event is appended, account data is saved, the old vector is restored, and the program exits with code 4.
+
+## Stage 8: benchmark and completion documentation
+
+## 1. Plain-English routine summary
+
+- `BENCH_RUN` measures the three addition variants with BIOS ticks and saves the results.
+- `BENCH_BCD_ADD_UNROLLED` performs the six-byte BCD addition without an inner `LOOP`.
+- `BENCH_BINARY_FORMAT` converts the binary cents total to a dollars-and-cents string.
+- `BENCH_BUILD_OUTPUT`, `BENCH_COPY_TEXT`, `BENCH_APPEND_DECIMAL`, and `BENCH_APPEND_CRLF` format the result file.
+- `BENCH_SAVE_OUTPUT` writes and closes `BENCH.OUT`, reporting DOS write failures.
+
+## 2. Files created or changed
+
+- Changed `SRC\BANK.ASM` to dispatch `/B`, configure 50,000 iterations, and display the validated binary result.
+- Created `SRC\BENCH.INC` with the benchmark, unrolled adder, formatter, and output helpers.
+- Added `TESTS\B00.IN`, `.ARG`, `.PGM`, `.RC`, and `.EXP` to exercise `/B` through the existing runner.
+- Changed `DOCS\DESIGN.md` and `DOCS\ISA_FEATURES.md` with Stage 8 procedure explanations and actual instruction/addressing uses.
+- Created `DOCS\BENCH.md` with Intel 8086 timing-table analysis and the observed DOSBox measurements.
+- Appended this Stage 8 report.
+
+## 3. Exact RUNHOST.PS1 result
+
+Command: `powershell -NoProfile -ExecutionPolicy Bypass -File TOOLS\RUNHOST.PS1`
+
+Process exit code: `0`. TASM/TLINK built BANK and TDRV; the runner reported `8086 lint passed: 8 ASM/INC sources checked.` and `PASS: LINT8086.PS1 flags the throwaway forbidden-instruction cases.` All 55 `.OUT`/`.EXP` comparisons, 15 `.DAT` binary comparisons, and 13 `.LOG` audit comparisons passed; captured DOS exit codes matched their `.RC` expectations. The new B00 case verified the exact console output and exit code 0. Final runner line: `Stage 0 headless proof passed.`
+
+The B00 benchmark file recorded: `BCD LOOP (ticks): 18`, `BCD UNROLLED (ticks): 14`, and `BINARY ADD + FORMAT 500.00 (ticks): 1`.
+
+## 4. Anything unsure about
+
+The empirical timing is one DOSBox observation, not a physical 8086 measurement; BIOS clock granularity is about 55 ms. The requested report screenshots require a manual interactive DOSBox run and were not captured here. No existing test input or expected output, and no lint rule, was changed.
+
+## 5. Student questions
+
+1. **What operation does each benchmark repeat?** Each performs 50,000 one-cent additions, with the binary variant converting the final cents total once.
+2. **What does unrolling remove?** The six-byte variant avoids the six inner `LOOP` instructions per packed-BCD addition.
+3. **How is carry preserved between packed-BCD bytes?** `MOV` and `INC` do not change CF between `DAA` and the next `ADC`.
+4. **How does the 32-bit formatter produce decimal digits?** It divides the high word by ten, carries that remainder into division of the low word, and reverses the remainders.
+5. **Why are DOSBox tick counts only relative?** BIOS ticks have roughly 55 ms resolution, and DOSBox scheduling depends on the host.
